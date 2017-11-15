@@ -18,28 +18,39 @@ tens = [(10,"ten"), (20,"twenty"), (30,"thirty"), (40,"forty"), (50,"fifty"), (6
         (70,"seventy"), (80,"eighty"), (90,"ninety")]
 
 groups :: [String]
-groups = ["", " thousand", " million", " billion", " trillion"]
+groups = ["", " thousand", " million", " billion", " trillion", " quadrillion", " quintillion",
+          " sextillion", " septillion", " octillion", " nonillion", " decillion", " undecillion",
+          " duodecillion", " tredecillion", " quattuordecillion", " quindecillion", " sexdecillion",
+          " septendecillion", " octodecillion", " novemdecillion", " vigintillion"]
+
+-- Maps a word to its power of 10
+groupList :: Integral a => [(String, a)]
+groupList = [("thousand",3), ("million",6), ("billion",9), ("trillion",12), ("quadrillion",15),
+             ("quintillion",18), ("sextillion",21), ("septillion",24), ("octillion",27),
+             ("nonillion",30), ("decillion",33), ("undecillion",36), ("duodecillion",39),
+             ("tredecillion",42), ("quattuordecillion",45), ("quindecillion",48),
+             ("sexdecillion",51), ("septendecillion",54), ("octodecillion",57),
+             ("novemdecillion",60), ("vigintillion",63)]
 
 
-toWord :: Integral a => a -> [(a, String)] -> String
-toWord n table = fromJust (lookup n table)
-
-
+-- Converts an Int or Integer to its String representation
 numToWord :: Integral a => a -> String
 numToWord n
     | n < 0      = "negative " ++ numToWord (-n)
     | n == 0     = "zero"
-    | n >= 10^15 = error "Doesn't support numbers bigger than trillions"
+    | n >= 10^65 = error "Doesn't support numbers bigger than vigintillions! (10^65-1)"
     | isHundred  = groupToWord d100 ++ " hundred"
     | otherwise  = unwords $ reverse buildGroups
     where
-        buildGroups = map join (filter (\(n,g) -> n /= "") (zip wordGroups groups))
+        buildGroups = map (uncurry (++)) (filter (\(n,g) -> n /= "") (zip wordGroups groups))
         wordGroups = map groupToWord $ splitNum n
-        join (w,g) = w ++ g
 
         isHundred = n <= 9000 && r1000 /= 0 && r100 == 0
         r1000 = n `rem` 1000
         (d100,r100) = n `quotRem` 100
+
+toWord :: Integral a => a -> [(a, String)] -> String
+toWord n table = fromMaybe "" (lookup n table)
 
 groupToWord :: Integral a => a -> String
 groupToWord n
