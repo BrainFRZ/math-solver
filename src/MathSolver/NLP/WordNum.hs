@@ -1,6 +1,8 @@
 module MathSolver.NLP.WordNum (numToWord) where
 
+import Data.Bool (bool)
 import Data.Char
+import Data.List.Split.Internals
 import Data.Maybe
 
 
@@ -45,7 +47,7 @@ numToWord n
     | isHundred  = groupToWord d100 ++ " hundred"
     | otherwise  = unwords $ reverse buildGroups
     where
-        buildGroups = map (uncurry (++)) (filter (\(n,g) -> n /= "") (zip wordGroups groups))
+        buildGroups = map (uncurry (++)) (filter (\(block,_) -> block /= "") (zip wordGroups groups))
         wordGroups = map groupToWord $ splitNum n
 
         isHundred = n <= 9000 && r1000 /= 0 && r100 == 0
@@ -91,8 +93,39 @@ splitNum n
 
 {--------------------------------------------------------------------------------------------------}
 {---                                   WORD TO NUMBER CONVERSION                                ---}
-{-------------------------------------------------------------------------------------------------}
+{--------------------------------------------------------------------------------------------------}
+
+-- Converts a single block to an Int or Integer
+wordToNum :: Integral a => String -> a
+wordToNum s
+    | s == ""     = 0
+    | otherwise   = fromBlock $ splitBlock s
+
+-- Splits a block on "hundred", keeping the delimeter
+splitBlock :: String -> [String]
+splitBlock block = map clean $ split (onSublist "hundred") block
+
+-- Calculates a block's value
+-- TODO: Handle numbers like "twenty eighty seven", etc
+fromBlock :: Integral a => [String] -> a
+fromBlock [x,"hundred",y] = fromBlock (words x) * 100 + fromBlock (words y)
+fromBlock [x,"hundred"] = fromBlock (words x) * 100
+fromBlock [x,y] = fromBlock (words x) + fromBlock (words y)
+fromBlock [w]
+    | mapMember w ones       = fromWord w ones
+    | mapMember w teens      = fromWord w teens
+    | mapMember w tens       = fromWord w tens
+    | otherwise              = 0
+fromBlock _ = 0
 
 -- Converts a word to its numeric value from a given conversion table
 fromWord :: Integral a => String -> [(String, a)] -> a
 fromWord word table = fromMaybe 0 (lookup word table)
+
+-- Determines whether a word is a member of a conversion table
+mapMember :: Integral a => String -> [(String, a)] -> Bool
+mapMember w table = isJust (lookup w table)
+
+-- Switches all hyphens to spaces and removes all other non-letters
+clean :: String -> String
+clean w = [bool ' ' c (c /= '-') | c <- (unwords.words) w, isLetter c || c == '-' || c == ' ']
