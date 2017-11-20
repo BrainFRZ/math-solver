@@ -1,7 +1,6 @@
 module MathSolver.NLP.WordNum (numToWord) where
 
 import Data.Char
-import Data.List
 import Data.Maybe
 
 
@@ -65,23 +64,21 @@ toWord n table = fromMaybe "" (lookup n (map swap table))
 -- 1000, such as 1900. Words are not comma-separated as per the Chicago Manual of Style. This
 -- prevents numbers from potentially seeming like a list of smaller numbers.
 groupToWord :: Integral a => a -> String
-groupToWord n
-    | n < 0     = "negative " ++ groupToWord (-n)
-    | n == 0    = ""
-    | otherwise = unwords $ numWords n
-
-numWords :: Integral a => a -> [String]
-numWords r
-    | r <= 0               = []
-    | r < 10               = [toWord r ones]
-    | r < 20               = [toWord r teens]
-    | r < 100 && r10 /= 0  = [toWord n10 tens ++ "-" ++ toWord r10 ones]
-    | r < 100              = toWord n10 tens : numWords r10
-    | r < 1000             = toWord d100 ones : "hundred" : numWords r100
-    | otherwise            = error "groupToWord: not a 3-digit or hundred group"
-    where
-        (n10, r10) = (r - r10, r `rem` 10)
-        (d100, r100) = r `quotRem` 100
+groupToWord n = unwords $ numWords n
+  where
+    numWords :: Integral a => a -> [String]
+    numWords r
+        | r < 0                = "negative" : numWords (-r)
+        | r == 0               = []
+        | r < 10               = [toWord r ones]
+        | r < 20               = [toWord r teens]
+        | r < 100 && r10 /= 0  = [toWord n10 tens ++ "-" ++ toWord r10 ones]
+        | r < 100              = toWord n10 tens : numWords r10
+        | r < 1000             = toWord d100 ones : "hundred" : numWords r100
+        | otherwise            = error "groupToWord: not a 3-digit or hundred group"
+        where
+            (n10, r10) = (r - r10, r `rem` 10)
+            (d100, r100) = r `quotRem` 100
 
 -- Splits a number into groups in reverse order
 splitNum :: Integral a => a -> [a]
