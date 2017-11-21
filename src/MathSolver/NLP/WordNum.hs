@@ -112,6 +112,7 @@ fromBlock [x,"hundred",y] = fromBlock (words x) * 100 + fromBlock (words y)
 fromBlock [x,"hundred"] = fromBlock (words x) * 100
 fromBlock [x,y] = fromBlock (words x) + fromBlock (words y)
 fromBlock [w]
+    | length (words w) > 1   = fromBlock (words w)
     | mapMember w ones       = fromWord w ones
     | mapMember w teens      = fromWord w teens
     | mapMember w tens       = fromWord w tens
