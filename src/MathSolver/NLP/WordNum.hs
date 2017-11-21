@@ -1,4 +1,4 @@
-module MathSolver.NLP.WordNum (numToWord) where
+module MathSolver.NLP.WordNum (numToWord, wordToNum) where
 
 import Data.Bool (bool)
 import Data.Char
@@ -99,18 +99,40 @@ splitNum n
 wordToNum :: Integral a => String -> a
 wordToNum s
     | s == ""     = 0
-    | otherwise   = fromBlock $ splitBlock s
+    | isNegative  = (-1) * wordToNum (unwords $ tail (words s))
+    | otherwise   = fromGroups $ splitGroups s
+    where
+        isNegative = head (words s) `elem` ["negative", "minus"]
+
+-- Splits a full number into blocks on group words, keeping delimeters at the end of each group.
+splitGroups :: String -> [String]
+splitGroups str = map unwords $ split (dropBlanks $ oneOf groupWords) (words str)
+  where
+    -- Removes initial space in each entry of `groups` and ignores initial ""
+    groupWords = map tail (tail groups)
+
+-- Calculates the total sum of all groups' values
+fromGroups :: Integral a => [String] -> a
+fromGroups (block:group:bs) = fromBlock (splitBlock block) * (multiplier group) + fromGroups bs
+fromGroups [block] = fromBlock (splitBlock block)
+fromGroups [] = 0
+
+-- Calculates a group's multiplier, or defaults to 1 (10^0) if the group isn't valid
+multiplier :: Integral a => String -> a
+multiplier g = 10 ^ fromMaybe 0 (lookup g groupList)
 
 -- Splits a block on "hundred", keeping the delimeter
 splitBlock :: String -> [String]
 splitBlock block = map clean $ split (onSublist "hundred") block
 
--- Calculates a block's value
+-- Calculates a block's value, defaulting to 0 if there's invalid input
 -- TODO: Handle numbers like "twenty eighty seven", etc
 fromBlock :: Integral a => [String] -> a
 fromBlock [x,"hundred",y] = fromBlock (words x) * 100 + fromBlock (words y)
 fromBlock [x,"hundred"] = fromBlock (words x) * 100
-fromBlock [x,y] = fromBlock (words x) + fromBlock (words y)
+fromBlock [x,y]
+    | mapMember x (tail tens) && mapMember y ones  = fromWord x tens + fromWord y ones
+    | otherwise                                    = 0
 fromBlock [w]
     | length (words w) > 1   = fromBlock (words w)
     | mapMember w ones       = fromWord w ones
