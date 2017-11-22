@@ -18,13 +18,7 @@ tens :: Integral a => [(String, a)]
 tens = [("ten",10), ("twenty",20), ("thirty",30), ("forty",40), ("fifty",50), ("sixty",60),
         ("seventy",70), ("eighty",80), ("ninety",90)]
 
-groups :: [String]
-groups = ["", " thousand", " million", " billion", " trillion", " quadrillion", " quintillion",
-          " sextillion", " septillion", " octillion", " nonillion", " decillion", " undecillion",
-          " duodecillion", " tredecillion", " quattuordecillion", " quindecillion", " sexdecillion",
-          " septendecillion", " octodecillion", " novemdecillion", " vigintillion"]
-
--- Maps a word to its power of 10 to calculate a group multiplier
+-- Maps a group word to its power of 10 to calculate a group multiplier
 groupList :: Integral a => [(String, a)]
 groupList = [("thousand",3), ("million",6), ("billion",9), ("trillion",12), ("quadrillion",15),
              ("quintillion",18), ("sextillion",21), ("septillion",24), ("octillion",27),
@@ -49,6 +43,7 @@ numToWord n
     where
         buildGroups = map (uncurry (++)) (filter (\(block,_) -> block /= "") (zip wordGroups groups))
         wordGroups = map groupToWord $ splitNum n
+        groups = "" : map (\(group,_) -> " " ++ group) groupList
 
         isHundred = n <= 9000 && r1000 /= 0 && r100 == 0
         r1000 = n `rem` 1000
@@ -108,8 +103,7 @@ wordToNum s
 splitGroups :: String -> [String]
 splitGroups str = map unwords $ split (dropBlanks $ oneOf groupWords) (words str)
   where
-    -- Removes initial space in each entry of `groups` and ignores initial ""
-    groupWords = map tail (tail groups)
+    groupWords = map (\(group,_) -> group) groupList
 
 -- Calculates the total sum of all groups' values
 fromGroups :: Integral a => [String] -> a
@@ -130,19 +124,20 @@ splitBlock block = map clean $ split (onSublist "hundred") block
     clean w = [bool ' ' c (c /= '-') | c <- (unwords.words) w, isLetter c || c == '-' || c == ' ']
 
 -- Calculates a block's value, defaulting to 0 if there's invalid input
--- TODO: Handle numbers like "twenty eighty seven", etc
+-- Words like "one eighty" will be treated as 180, and "nineteen ninety" will be 1990.
 fromBlock :: Integral a => [String] -> a
 fromBlock [x,"hundred",y] = fromBlock (words x) * 100 + fromBlock (words y)
 fromBlock [x,"hundred"] = fromBlock (words x) * 100
 fromBlock [x,y]
     | mapMember x (tail tens) && mapMember y ones  = fromWord x tens + fromWord y ones
-    | otherwise                                    = 0
+    | otherwise                                    = fromBlock [x] * 100 + fromBlock [y]
 fromBlock [w]
     | length (words w) > 1   = fromBlock (words w)
     | mapMember w ones       = fromWord w ones
     | mapMember w teens      = fromWord w teens
     | mapMember w tens       = fromWord w tens
     | otherwise              = 0
+fromBlock (x:ys) = fromBlock [x] * 100 + fromBlock ys
 fromBlock _ = 0
 
 -- Converts a word to its numeric value from a given conversion table
