@@ -24,7 +24,7 @@ groups = ["", " thousand", " million", " billion", " trillion", " quadrillion", 
           " duodecillion", " tredecillion", " quattuordecillion", " quindecillion", " sexdecillion",
           " septendecillion", " octodecillion", " novemdecillion", " vigintillion"]
 
--- Maps a word to its power of 10
+-- Maps a word to its power of 10 to calculate a group multiplier
 groupList :: Integral a => [(String, a)]
 groupList = [("thousand",3), ("million",6), ("billion",9), ("trillion",12), ("quadrillion",15),
              ("quintillion",18), ("sextillion",21), ("septillion",24), ("octillion",27),
@@ -43,7 +43,7 @@ numToWord :: Integral a => a -> String
 numToWord n
     | n < 0      = "negative " ++ numToWord (-n)
     | n == 0     = "zero"
-    | n >= 10^65 = error "Doesn't support numbers bigger than vigintillions! (10^65-1)"
+    | n >= 10^65 = error "numToWord: Doesn't support numbers bigger than vigintillions! (10^65-1)"
     | isHundred  = groupToWord d100 ++ " hundred"
     | otherwise  = unwords $ reverse buildGroups
     where
@@ -53,6 +53,14 @@ numToWord n
         isHundred = n <= 9000 && r1000 /= 0 && r100 == 0
         r1000 = n `rem` 1000
         (d100,r100) = n `quotRem` 100
+
+-- Splits a number into groups in reverse order
+splitNum :: Integral a => a -> [a]
+splitNum n
+    | d == 0  = [n]
+    | otherwise = m : splitNum d
+    where
+        (d,m) = n `quotRem` 1000
 
 -- Converts a number to a word given a number translation map
 toWord :: Integral a => a -> [(String, a)] -> String
@@ -81,14 +89,6 @@ groupToWord n = unwords $ numWords n
         where
             (n10, r10) = (r - r10, r `rem` 10)
             (d100, r100) = r `quotRem` 100
-
--- Splits a number into groups in reverse order
-splitNum :: Integral a => a -> [a]
-splitNum n
-    | d == 0  = [n]
-    | otherwise = m : splitNum d
-    where
-        (d,m) = n `quotRem` 1000
 
 
 {--------------------------------------------------------------------------------------------------}
@@ -121,9 +121,13 @@ fromGroups [] = 0
 multiplier :: Integral a => String -> a
 multiplier g = 10 ^ fromMaybe 0 (lookup g groupList)
 
--- Splits a block on "hundred", keeping the delimeter
+-- Splits a block on "hundred", keeping the delimeter, and cleaning spacing and punctuation
 splitBlock :: String -> [String]
 splitBlock block = map clean $ split (onSublist "hundred") block
+  where
+    -- Switches all hyphens to spaces and removes all other non-letters
+    clean :: String -> String
+    clean w = [bool ' ' c (c /= '-') | c <- (unwords.words) w, isLetter c || c == '-' || c == ' ']
 
 -- Calculates a block's value, defaulting to 0 if there's invalid input
 -- TODO: Handle numbers like "twenty eighty seven", etc
@@ -148,7 +152,3 @@ fromWord word table = fromMaybe 0 (lookup word table)
 -- Determines whether a word is a member of a conversion table
 mapMember :: Integral a => String -> [(String, a)] -> Bool
 mapMember w table = isJust (lookup w table)
-
--- Switches all hyphens to spaces and removes all other non-letters
-clean :: String -> String
-clean w = [bool ' ' c (c /= '-') | c <- (unwords.words) w, isLetter c || c == '-' || c == ' ']
