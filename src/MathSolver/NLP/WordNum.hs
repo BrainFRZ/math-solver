@@ -91,13 +91,16 @@ groupToWord n = unwords $ numWords n
 {--------------------------------------------------------------------------------------------------}
 
 -- Converts a single block to an Int or Integer
-wordToNum :: Integral a => String -> a
+wordToNum :: (Integral a, Read a) => String -> a
 wordToNum s
     | s == ""     = 0
     | isNegative  = (-1) * wordToNum (unwords $ tail (words s))
+    | isDigitStr  = read cleanedNum
     | otherwise   = fromGroups $ splitGroups s
     where
         isNegative = head (words s) `elem` ["negative", "minus"]
+        isDigitStr = all isDigit cleanedNum || (head s == '-' && all isDigit (tail cleanedNum))
+        cleanedNum = filter (not . (`elem` ", ")) s -- digit string without spaces or commas
 
 -- Splits a full number into blocks on group words, keeping delimeters at the end of each group.
 splitGroups :: String -> [String]
