@@ -89,20 +89,37 @@ solve :: Problem -> Answer
 solve (question, events) = ask question $ run events
   where
     ask :: Question -> State -> Answer
-    ask (Quantity subject, item) state = (Quantity subject, item, hasAmount subject item state)
+    ask (Quantity subject, item) state = (Quantity subject, item, result)
+        where result = answer subject item state
 
     ask (Compare subject target, item) state = (Compare subject target, item, diff)
         where diff = hasAmount subject item state - hasAmount target item state 
 
     ask (Combine subj1 subj2, item) state = (Combine subj1 subj2, item, total)
-        where total = hasAmount subj1 item state + hasAmount subj2 item state
+        where total = answer subj1 item state + answer subj2 item state
 
     ask (CombineAll, item) state = (CombineAll, item, total)
-        where total = sum [amount | (item,amount) <- concatMap snd state]
+        where
+            hasItem = item `elem` (map fst $ concatMap snd state)
+            total
+                | hasItem    = sum [amount | (item,amount) <- concatMap snd state]
+                | otherwise  = sum $ map snd $ concatMap snd state
+
+    -- If the answer is 0, the term is probably generalized, assuming it's not a trick question
+    answer :: Owner -> Item -> State -> Amount
+    answer owner item state
+        | hasItem    = hasAmount owner item state
+        | otherwise  = hasTotal owner state
+        where
+            hasItem = item `elem` (map fst $ fromMaybe [] (lookup owner state))
 
     -- If no info given, assume they have 0
     hasAmount :: Owner -> Item -> State -> Amount
     hasAmount name item state = fromMaybe 0 (lookup item $ fromMaybe [] (lookup name state))
+
+    -- Calculates total number of items someone has
+    hasTotal :: Owner -> State -> Amount
+    hasTotal owner state = (sum . map snd) $ fromMaybe [] (lookup owner state)
 
 -- Runs all events on an initial empty problem state
 run :: [Event] -> State
@@ -128,3 +145,6 @@ state2 = [("Jane",[("apples",10)]),("Tom",[("apples",5),("bananas",10)])]
 -- Tom grabs 10 apples from a tree. He gives 2 to Jane. Jane then takes another 3 from Tom.
 events1 = [("Tom", Add "apples" 10), ("Tom", Give "apples" 2 "Jane"),
            ("Jane", TakeFrom "apples" 3 "Tom")]
+
+-- How much fruit does Tom have?
+question1 = (Quantity "Tom", "fruit")
