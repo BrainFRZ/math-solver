@@ -106,11 +106,11 @@ wordToNum s
 splitGroups :: String -> [String]
 splitGroups str = map unwords $ split (dropBlanks $ oneOf groupWords) (words str)
   where
-    groupWords = map (\(group,_) -> group) groupList
+    groupWords = map fst groupList
 
 -- Calculates the total sum of all groups' values
 fromGroups :: Integral a => [String] -> a
-fromGroups (block:group:bs) = fromBlock (splitBlock block) * (multiplier group) + fromGroups bs
+fromGroups (block:group:bs) = fromBlock (splitBlock block) * multiplier group + fromGroups bs
 fromGroups [block] = fromBlock (splitBlock block)
 fromGroups [] = 0
 
