@@ -1,4 +1,4 @@
-module MathSolver.Calc.Solver where
+module MathSolver.Calc.Solver (solve, run, eval) where
 
 import Data.List
 
@@ -75,7 +75,23 @@ give owner item amount target state
     | otherwise        = remove owner item amount $ add target item amount state
 
 takeFrom :: Owner -> Item -> Amount -> Owner -> State -> State
-takeFrom owner item amount target = give target item amount owner
+takeFrom owner item amount target state
+    | owner == target  = state
+    | otherwise        = add owner item amount $ remove target item amount state
+
+{--------------------------------------------------------------------------------------------------}
+{---                                         RUN EVENTS                                         ---}
+{--------------------------------------------------------------------------------------------------}
+
+-- Evaluates a single event on the current problem state
+eval :: Event -> State -> State
+eval (owner, Set item amount) = set owner item amount
+eval (owner, Add item amount) = add owner item amount
+eval (owner, Remove item amount) = remove owner item amount
+eval (owner, Empty item) = empty owner item
+eval (owner, Reset) = reset owner
+eval (owner, Give item amount target) = give owner item amount target
+eval (owner, TakeFrom item amount target) = takeFrom owner item amount target
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        TEST STATES                                         ---}
