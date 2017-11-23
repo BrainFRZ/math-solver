@@ -1,6 +1,7 @@
-module MathSolver.Calc.Solver (solve, run, eval) where
+module MathSolver.Calc.Solver where
 
 import Data.List
+import Data.Maybe
 
 import MathSolver.Types
 
@@ -83,19 +84,47 @@ takeFrom owner item amount target state
 {---                                         RUN EVENTS                                         ---}
 {--------------------------------------------------------------------------------------------------}
 
+-- Solves a question and gives an answer
+solve :: Problem -> Answer
+solve (question, events) = ask question $ run events
+  where
+    ask :: Question -> State -> Answer
+    ask (Quantity subject, item) state = (Quantity subject, item, hasAmount subject item state)
+
+    ask (Compare subject target, item) state = (Compare subject target, item, diff)
+        where diff = hasAmount subject item state - hasAmount target item state 
+
+    ask (Combine subj1 subj2, item) state = (Combine subj1 subj2, item, total)
+        where total = hasAmount subj1 item state + hasAmount subj2 item state
+
+    ask (CombineAll, item) state = (CombineAll, item, total)
+        where total = sum [amount | (item,amount) <- concatMap snd state]
+
+    -- If no info given, assume they have 0
+    hasAmount :: Owner -> Item -> State -> Amount
+    hasAmount name item state = fromMaybe 0 (lookup item $ fromMaybe [] (lookup name state))
+
+-- Runs all events on an initial empty problem state
+run :: [Event] -> State
+run = foldl' eval []
+
 -- Evaluates a single event on the current problem state
-eval :: Event -> State -> State
-eval (owner, Set item amount) = set owner item amount
-eval (owner, Add item amount) = add owner item amount
-eval (owner, Remove item amount) = remove owner item amount
-eval (owner, Empty item) = empty owner item
-eval (owner, Reset) = reset owner
-eval (owner, Give item amount target) = give owner item amount target
-eval (owner, TakeFrom item amount target) = takeFrom owner item amount target
+eval :: State -> Event -> State
+eval state (owner, Set item amount) = set owner item amount state
+eval state (owner, Add item amount) = add owner item amount state
+eval state (owner, Remove item amount) = remove owner item amount state
+eval state (owner, Empty item) = empty owner item state
+eval state (owner, Reset) = reset owner state
+eval state (owner, Give item amount target) = give owner item amount target state
+eval state (owner, TakeFrom item amount target) = takeFrom owner item amount target state
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        TEST STATES                                         ---}
 {--------------------------------------------------------------------------------------------------}
 
 state1 = [("Tom", [("apples",5), ("bananas",10)])]
-state2 = [("Jill",[("apples",10)]),("Tom",[("apples",5),("bananas",10)])]
+state2 = [("Jane",[("apples",10)]),("Tom",[("apples",5),("bananas",10)])]
+
+-- Tom grabs 10 apples from a tree. He gives 2 to Jane. Jane then takes another 3 from Tom.
+events1 = [("Tom", Add "apples" 10), ("Tom", Give "apples" 2 "Jane"),
+           ("Jane", TakeFrom "apples" 3 "Tom")]

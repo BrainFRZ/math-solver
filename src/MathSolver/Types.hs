@@ -1,6 +1,13 @@
 module MathSolver.Types where
 
-data QuestionType = Quantity | Duration | Compare Owner Owner | Combine Owner Owner | CombineAll
+data QuestionType = Quantity { subject :: Owner }   -- How many does X have?
+                  | Compare { subject :: Owner      -- How many more does X have than Y?
+                            , against :: Owner }
+                  | Combine Owner Owner             -- How many do X and Y have total?
+                  | CombineAll                      -- How many are there total?
+--                | Duration                        -- How long did it take?
+                        deriving (Show)
+
 data Action = Set { item :: Item            -- Sets an owner's capacity of an item
                   , amount :: Integer }
             | Add { item :: Item            -- Owner gains some of an item
@@ -11,10 +18,11 @@ data Action = Set { item :: Item            -- Sets an owner's capacity of an it
             | Reset                         -- Owner loses everything
             | Give { item ::Item            -- Owner gives to a target
                    , amount :: Integer
-                   , target :: Owner }
+                   , to :: Owner }
             | TakeFrom { item ::Item        -- Owner takes items from a target
                        , amount :: Integer
-                       , target :: Owner }
+                       , from :: Owner }
+                deriving (Show)
 
 type Owner = String
 type Item = String
@@ -26,5 +34,5 @@ type State = [(Owner, Inventory)]
 type Event = (Owner, Action)
 
 type Problem = (Question, [Event])
-type Question = (Owner, QuestionType, Item)
-type Answer = (Owner, QuestionType, Item, Amount)
+type Question = (QuestionType, Item)
+type Answer = (QuestionType, Item, Amount)
