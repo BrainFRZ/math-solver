@@ -93,6 +93,25 @@ solve (Problem question events) = ask question $ run events
     ask (Question (Quantity subject) item) state = Answer (Quantity subject) result item
         where result = finalQuantity subject item state
 
+    ask (Question (Gain subject) item) state
+        | gainer == NoOne  = Answer (Gain subject) 0 item
+        | otherwise       = Answer (Gain subject) gain item
+      where
+        gainer = findOwner subject state
+        gain = finalAmount - initialAmount initialEvent
+        finalAmount = finalQuantity subject item state
+                                  -- guaranteed to be Just if owner /= NoOne
+        initialEvent = fromJust $ find (\ev -> subject == owner ev) events
+        
+        initialAmount :: Event -> Amount
+        initialAmount (Event _ (Set amount _)) = amount
+        initialAmount ev = 0
+
+    ask (Question (Loss subject) item) state = loss $ ask (Question (Gain subject) item) state
+        where
+            loss :: Answer -> Answer
+            loss (Answer (Gain subject) gain item) = Answer (Loss subject) (-gain) item
+
     ask (Question (Compare subject target) item) state
         | subject == target  = Answer (Quantity subject) subjQuantity item
         | otherwise          = Answer (Compare subject target) diff item
@@ -162,9 +181,9 @@ eval state (Event owner (TakeFrom amount item target)) = takeFrom owner item amo
 state1 = [Owner "Tom" [("apples",5), ("bananas",10)]]
 state2 = [Owner "Jane" [("apples",10)], Owner "Tom" [("apples",5),("bananas",10)]]
 
--- Tom grabs ten apples from a tree. He gives two to Jane.
--- Jane then takes another three from Tom and one from the tree.
-events1 = [Event "Tom" (Add 10 "apples"), Event "Tom" (Give 2 "apples" "Jane"),
+-- Tom has 10 apples. He gives two to Jane.
+-- Jane then takes three more from Tom and grabs another one from a tree.
+events1 = [Event "Tom" (Set 10 "apples"), Event "Tom" (Give 2 "apples" "Jane"),
            Event "Jane" (TakeFrom 3 "apples" "Tom"), Event "Jane" (Add 1 "apples")]
 
 quantity1 = solve (Problem (Question (Quantity "Tom") "apples") events1)
@@ -176,3 +195,6 @@ compare2 = solve (Problem (Question (Compare "Jane" "Tom") "apples") events1)
 combine = solve (Problem (Question (Combine "Jane" "Tom") "apples") events1)
 
 combineAll = solve (Problem (Question CombineAll "apples") events1)
+
+gain1 = solve (Problem (Question (Gain "Tom") "apples") events1)
+gain2 = solve (Problem (Question (Gain "Jane") "apples") events1)
