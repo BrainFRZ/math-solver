@@ -1,7 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module MathSolver.Calc.Solver (solve) where
 
 import Data.List
 import Data.Maybe
+import qualified Data.Text as T
 
 import MathSolver.Types
 
@@ -40,7 +43,7 @@ addItem item amount inv
 
 set :: Name -> Item -> Amount -> State -> State
 set owner item amount state
-    | null item                      = state
+    | T.null item                      = state
     | amount == 0 && not ownerKnown  = Owner owner [] : state
     | amount /= 0 && not ownerKnown  = Owner owner [(item, amount)] : state
     | amount == 0                    = o : xs ++ ys
@@ -51,7 +54,7 @@ set owner item amount state
 
 add :: Name -> Item -> Amount -> State -> State
 add owner item amount state
-    | null item                      = state
+    | T.null item                      = state
     | amount == 0 && not ownerKnown  = Owner owner [] : state
     | amount /= 0 && not ownerKnown  = Owner owner [(item, amount)] : state
     | amount == 0                    = o : xs ++ ys

@@ -1,5 +1,7 @@
 module MathSolver.Types where
 
+import Data.Text (Text)
+
 data QuestionType = Quantity { subject :: Name }    -- How many does X have?
                   | Gain { subject :: Name }        -- How many has X gained?
                   | Loss { subject :: Name }        -- How many has X lost?
@@ -26,8 +28,8 @@ data Action = Set { amount :: Integer       -- Sets an owner's capacity of an it
                        , from :: Name }
                 deriving (Show, Eq)
 
-type Name = String
-type Item = String
+type Name = Text
+type Item = Text
 type Amount = Integer
 
 type Inventory = [(Item, Amount)]
