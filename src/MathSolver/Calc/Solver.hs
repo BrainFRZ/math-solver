@@ -6,8 +6,8 @@ import Data.Maybe
 import MathSolver.Types
 
 
-owners :: State -> [Owner]
-owners = map fst
+ownerNames :: State -> [Name]
+ownerNames = map name
 
 items :: Inventory -> [Item]
 items = map fst
@@ -38,44 +38,45 @@ addItem item amount inv
         (is, i:js) = break (\(i,_) -> i == item) inv
         total = snd i + amount
 
-set :: Owner -> Item -> Amount -> State -> State
+set :: Name -> Item -> Amount -> State -> State
 set owner item amount state
     | null item                      = state
-    | amount == 0 && not ownerKnown  = (owner, []) : state
-    | amount /= 0 && not ownerKnown  = (owner, [(item, amount)]) : state
-    | otherwise                      = (owner, setItem item amount inv) : xs ++ ys
+    | amount == 0 && not ownerKnown  = (Owner owner []) : state
+    | amount /= 0 && not ownerKnown  = (Owner owner [(item, amount)]) : state
+    | amount == 0                    = o : xs ++ ys
+    | otherwise                      = (Owner n (setItem item amount inv)) : xs ++ ys
     where
-        ownerKnown = owner `elem` owners state
-        (xs, (_,inv):ys) = break (\(o',_) -> o' == owner) state
+        ownerKnown = owner `elem` ownerNames state
+        (xs, o@(Owner n inv):ys) = break (\o -> name o == owner) state
 
-
-add :: Owner -> Item -> Amount -> State -> State
+add :: Name -> Item -> Amount -> State -> State
 add owner item amount state
     | null item                      = state
-    | amount == 0 && not ownerKnown  = (owner, []) : state
-    | amount /= 0 && not ownerKnown  = (owner, [(item, amount)]) : state
-    | otherwise                      = (owner, addItem item amount inv) : xs ++ ys
+    | amount == 0 && not ownerKnown  = (Owner owner []) : state
+    | amount /= 0 && not ownerKnown  = (Owner owner [(item, amount)]) : state
+    | amount == 0                    = o : xs ++ ys
+    | otherwise                      = (Owner n (addItem item amount inv)) : xs ++ ys
     where
-        ownerKnown = owner `elem` owners state
-        (xs, (_,inv):ys) = break (\(o',_) -> o' == owner) state
+        ownerKnown = owner `elem` ownerNames state
+        (xs, o@(Owner n inv):ys) = break (\o -> name o == owner) state
 
-remove :: Owner -> Item -> Amount -> State -> State
+remove :: Name -> Item -> Amount -> State -> State
 remove owner item amount = add owner item (-amount)
 
-empty :: Owner -> Item -> State -> State
+empty :: Name -> Item -> State -> State
 empty owner item = set owner item 0
 
-reset :: Owner -> State -> State
+reset :: Name -> State -> State
 reset owner state
-    | owner `elem` owners state = (owner, []) : filter (\(o,_) -> o /= owner) state
-    | otherwise                 = state
+    | owner `elem` ownerNames state = (Owner owner []) : filter (\o -> name o /= owner) state
+    | otherwise                     = state
 
-give :: Owner -> Item -> Amount -> Owner -> State -> State
+give :: Name -> Item -> Amount -> Name -> State -> State
 give owner item amount target state
     | owner == target  = state
     | otherwise        = remove owner item amount $ add target item amount state
 
-takeFrom :: Owner -> Item -> Amount -> Owner -> State -> State
+takeFrom :: Name -> Item -> Amount -> Name -> State -> State
 takeFrom owner item amount target state
     | owner == target  = state
     | otherwise        = add owner item amount $ remove target item amount state
@@ -86,40 +87,59 @@ takeFrom owner item amount target state
 
 -- Solves a question and gives an answer
 solve :: Problem -> Answer
-solve (question, events) = ask question $ run events
+solve (Problem question events) = ask question $ run events
   where
     ask :: Question -> State -> Answer
-    ask (Quantity subject, item) state = (Quantity subject, item, result)
-        where result = answer subject item state
+    ask (Question (Quantity subject) item) state = Answer (Quantity subject) result item
+        where result = finalQuantity subject item state
 
-    ask (Compare subject target, item) state = (Compare subject target, item, diff)
-        where diff = hasAmount subject item state - hasAmount target item state 
-
-    ask (Combine subj1 subj2, item) state = (Combine subj1 subj2, item, total)
-        where total = answer subj1 item state + answer subj2 item state
-
-    ask (CombineAll, item) state = (CombineAll, item, total)
+    ask (Question (Compare subject target) item) state
+        | subject == target  = Answer (Quantity subject) subjQuantity item
+        | otherwise          = Answer (Compare subject target) diff item
         where
-            hasItem = item `elem` (map fst $ concatMap snd state)
-            total
-                | hasItem    = sum [amount | (item,amount) <- concatMap snd state]
-                | otherwise  = sum $ map snd $ concatMap snd state
+            subjQuantity = finalQuantity subject item state
+            diff = subjQuantity - finalQuantity target item state 
+
+    ask (Question (Combine subj1 subj2) item) state
+        | subj1 == subj2  = Answer (Quantity subj1) subjQuantity item
+        | otherwise       = Answer (Combine subj1 subj2) total item
+        where
+            subjQuantity = finalQuantity subj1 item state
+            total = subjQuantity + finalQuantity subj2 item state
+
+    ask (Question CombineAll item) state = Answer CombineAll total item
+      where
+        hasItem = item `elem` (map fst $ concatMap inventory state)
+        total
+            | hasItem    = sum [amount | (item,amount) <- concatMap inventory state]
+            | otherwise  = sum $ map snd $ concatMap inventory state
 
     -- If the answer is 0, the term is probably generalized, assuming it's not a trick question
-    answer :: Owner -> Item -> State -> Amount
-    answer owner item state
-        | hasItem    = hasAmount owner item state
-        | otherwise  = hasTotal owner state
+    finalQuantity :: Name -> Item -> State -> Amount
+    finalQuantity name item state
+        | owner == NoOne  = 0
+        | hasItem         = hasAmount item inv
+        | otherwise       = hasTotal inv
         where
-            hasItem = item `elem` (map fst $ fromMaybe [] (lookup owner state))
+            owner = findOwner name state
+            inv = inventory owner
+            hasItem = item `elem` items inv
 
-    -- If no info given, assume they have 0
-    hasAmount :: Owner -> Item -> State -> Amount
-    hasAmount name item state = fromMaybe 0 (lookup item $ fromMaybe [] (lookup name state))
+    -- If no info given, default to 0
+    hasAmount :: Item -> Inventory -> Amount
+    hasAmount item inv = fromMaybe 0 (lookup item inv)
 
     -- Calculates total number of items someone has
-    hasTotal :: Owner -> State -> Amount
-    hasTotal owner state = (sum . map snd) $ fromMaybe [] (lookup owner state)
+    hasTotal :: Inventory -> Amount
+    hasTotal inv = sum $ map snd inv
+
+    -- Finds the Owner given a name
+    findOwner :: Name -> State -> Owner
+    findOwner n state
+        | null owner  = NoOne
+        | otherwise   = head owner
+        where
+            owner = dropWhile (\o -> name o /= n) state
 
 -- Runs all events on an initial empty problem state
 run :: [Event] -> State
@@ -127,24 +147,32 @@ run = foldl' eval []
 
 -- Evaluates a single event on the current problem state
 eval :: State -> Event -> State
-eval state (owner, Set item amount) = set owner item amount state
-eval state (owner, Add item amount) = add owner item amount state
-eval state (owner, Remove item amount) = remove owner item amount state
-eval state (owner, Empty item) = empty owner item state
-eval state (owner, Reset) = reset owner state
-eval state (owner, Give item amount target) = give owner item amount target state
-eval state (owner, TakeFrom item amount target) = takeFrom owner item amount target state
+eval state (Event owner (Set amount item)) = set owner item amount state
+eval state (Event owner (Add amount item)) = add owner item amount state
+eval state (Event owner (Remove amount item)) = remove owner item amount state
+eval state (Event owner (Empty item)) = empty owner item state
+eval state (Event owner Reset) = reset owner state
+eval state (Event owner (Give amount item target)) = give owner item amount target state
+eval state (Event owner (TakeFrom amount item target)) = takeFrom owner item amount target state
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        TEST STATES                                         ---}
 {--------------------------------------------------------------------------------------------------}
 
-state1 = [("Tom", [("apples",5), ("bananas",10)])]
-state2 = [("Jane",[("apples",10)]),("Tom",[("apples",5),("bananas",10)])]
+state1 = [Owner "Tom" [("apples",5), ("bananas",10)]]
+state2 = [Owner "Jane" [("apples",10)], Owner "Tom" [("apples",5),("bananas",10)]]
 
--- Tom grabs 10 apples from a tree. He gives 2 to Jane. Jane then takes another 3 from Tom.
-events1 = [("Tom", Add "apples" 10), ("Tom", Give "apples" 2 "Jane"),
-           ("Jane", TakeFrom "apples" 3 "Tom")]
+-- Tom grabs ten apples from a tree. He gives two to Jane.
+-- Jane then takes another three from Tom and one from the tree.
+events1 = [Event "Tom" (Add 10 "apples"), Event "Tom" (Give 2 "apples" "Jane"),
+           Event "Jane" (TakeFrom 3 "apples" "Tom"), Event "Jane" (Add 1 "apples")]
 
--- How much fruit does Tom have?
-question1 = (Quantity "Tom", "fruit")
+quantity1 = solve (Problem (Question (Quantity "Tom") "apples") events1)
+quantity2 = solve (Problem (Question (Quantity "Jane") "apples") events1)
+
+compare1 = solve (Problem (Question (Compare "Tom" "Jane") "apples") events1)
+compare2 = solve (Problem (Question (Compare "Jane" "Tom") "apples") events1)
+
+combine = solve (Problem (Question (Combine "Jane" "Tom") "apples") events1)
+
+combineAll = solve (Problem (Question CombineAll "apples") events1)
