@@ -35,7 +35,7 @@ type Amount = Integer
 type Inventory = [(Item, Amount)]
 type State = [Owner]
 
-data Owner = NoOne
+data Owner = NoOne | Unknown
            | Owner { name :: Name
                    , inventory :: Inventory }
                 deriving (Show, Eq)
@@ -52,7 +52,8 @@ data Question = Question { questionType :: QuestionType
                          , itemAsked :: Item }
                     deriving (Show, Eq)
 
-data Answer = Answer { answerType :: QuestionType
+data Answer = Unsolvable
+            | Answer { answerType :: QuestionType
                      , total :: Amount
                      , itemAnswered :: Item }
-                 deriving (Show, Eq)
+                deriving (Show, Eq)
