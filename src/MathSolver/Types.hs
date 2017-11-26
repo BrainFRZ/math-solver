@@ -35,7 +35,7 @@ type Amount = Integer
 type Inventory = [(Item, Amount)]
 type State = [Owner]
 
-data Owner = NoOne | Unknown
+data Owner = NoOne
            | Owner { name :: Name
                    , inventory :: Inventory }
                 deriving (Show, Eq)

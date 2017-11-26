@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module MathSolver.NLP.WordNum (numToWord, wordToNum, isNumWord) where
+module MathSolver.NLP.WordNum (numToWord, wordToNum, isNumWord, numWords) where
 
 import Data.Bool (bool)
 import Data.Char
@@ -31,6 +31,9 @@ groupList = [("thousand",3), ("million",6), ("billion",9), ("trillion",12), ("qu
              ("sexdecillion",51), ("septendecillion",54), ("octodecillion",57),
              ("novemdecillion",60), ("vigintillion",63)]
 
+
+numWords :: [Text]
+numWords = map fst $ concat [ones, teens, tens, groupList]
 
 isNumWord :: Text -> Bool
 isNumWord word = all isNumToken (T.words word)

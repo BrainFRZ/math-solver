@@ -25,4 +25,6 @@ library
                      , parsec
                      , split
                      , text
+                     , cereal
+                     , QuickCheck (>=2.1 && <2.10)
   default-language:    Haskell2010
