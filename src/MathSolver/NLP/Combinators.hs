@@ -255,6 +255,13 @@ takeAP = do
     t <- targName
     return (mkChunk C_Take_AP [v, n, o, t])
 
+event :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+event = do
+    s <- subjName
+    a <- try setAP <|> try giveAP <|> try takeAP <|> changeAP
+    _ <- PC.manyTill anyToken (txtTok Sensitive ".")
+    return (mkChunk C_Ev [s, a])
+
 
 {--------------------------------------------------------------------------------------------------}
 {---                                      QUESTION CHUNKS                                       ---}
@@ -289,21 +296,3 @@ total = do
     v <- posTok B.VB
     _ <- followedBy anyToken (oneOf Insensitive [Token "altogether", Token "total", Token "all"])
     return (mkChunk C_Qst_Tot $ map fromJust (filter isJust [Just o, s, Just (POS_CN v)]))
-
-
-{--------------------------------------------------------------------------------------------------}
-{---                                       PROBLEM CHUNKS                                       ---}
-{--------------------------------------------------------------------------------------------------}
-
-event :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-event = do
-    s <- subjName
-    a <- try setAP <|> try giveAP <|> try takeAP <|> changeAP
-    return (mkChunk C_Ev [s, a])
-
-events = PC.many1 event
-
-problem :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-problem = do
-    q <- try total <|> howMany1
-    return (mkChunk C_Prob [q])
