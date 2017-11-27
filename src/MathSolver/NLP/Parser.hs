@@ -41,6 +41,27 @@ isEvt s = tsType s == Evt
 isQst :: Tag tag => TaggedSentence tag -> Bool
 isQst s = tsType s == Qst
 
+{--------------------------------------------------------------------------------------------------}
+{---                                       Pre-Processing                                       ---}
+{--------------------------------------------------------------------------------------------------}
+
+{-
+Todo:
+    Convert "If <event>, <question>" --> <event> <question>
+    Convert separate conjunctive sentences into distinct events
+    Delete adverbs
+    Expand contraction
+-}
+
+{--------------------------------------------------------------------------------------------------}
+{---                                      Post-Processing                                       ---}
+{--------------------------------------------------------------------------------------------------}
+
+{-
+Todo:
+    Replace pronouns with Subject; risky, but seems safe enough
+    
+-}
 
 {--------------------------------------------------------------------------------------------------}
 {---                                       Problem Parser                                       ---}
@@ -73,15 +94,3 @@ parseEvtOwner s = undefined
 
 parseQstOwner :: Tag tag => TaggedSentence tag -> Name
 parseQstOwner s = undefined
-
-
-{-
-tagger <- brownTagger
-tagged = tag tagger "Lucy bought 12 packs of cookies and 16 packs of noodles."
-tagFull = tag tagger "Lucy bought 12 packs of cookies and 16 packs of noodles. Jane gave her two more. How many does she have now?"
--}
-
-
-{---
-Look at the first event for action type. If it's not in the ADD/REMOVE group, treat it as a SET
--}

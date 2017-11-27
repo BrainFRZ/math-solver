@@ -21,7 +21,7 @@ main = do putStrLn $ T.unwords $ M.keys menu
           putStr "Enter an option: "
           opt <- getLine
           case M.lookup opt menu of
-            Just o -> o
+            Just o  -> o
             Nothing -> putStrLn "Not an option" >> main
 
 parseProblem :: IO ()

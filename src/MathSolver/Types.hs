@@ -9,7 +9,6 @@ data QuestionType = Quantity { subject :: Name }    -- How many does X have?
                             , against :: Name }
                   | Combine Name Name               -- How many do X and Y have total?
                   | CombineAll                      -- How many are there total?
---                | Duration                        -- How long did it take?
                         deriving (Show, Eq)
 
 data Action = Set { amount :: Integer       -- Sets an owner's capacity of an item
