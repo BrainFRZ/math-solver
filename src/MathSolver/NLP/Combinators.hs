@@ -1,16 +1,14 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module MathSolver.NLP.Combinators where
 
-import GHC.Generics (Generic)
-import Data.Serialize (Serialize)
-import Test.QuickCheck.Arbitrary (Arbitrary(..))
-import Test.QuickCheck.Gen (elements)
+import Prelude hiding (compare)
 
 import Data.Maybe (isJust, fromJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 
+import Text.Parsec (unexpected, eof)
 import qualified Text.Parsec.Combinator as PC
 import Text.Parsec.Prim (lookAhead, (<|>), try, token )
 import Text.Read (readEither)
@@ -24,39 +22,68 @@ import NLP.Types.Tree (mkChunk, Token(..), ChunkOr(..), ChunkedSentence(..), Chu
 import MathSolver.NLP.WordNum
 
 
-data ProbChunk = C_Ev       -- Event
-               | C_Qst_Qty  -- Question asking about quantity
-               | C_Qst_Tot  -- Question asking about a total
-               | C_Set_AP   -- Action phrase
-               | C_Chg_AP   -- Add/Remove Action phrase
-               | C_Give_AP  -- GiveTo Action phrase
-               | C_Take_AP  -- TakeFrom Action phrase
-               | C_VP       -- Verb phrase
-               | C_Subj     -- Owner name
-               | C_Targ     -- Target name
-               | C_Trans    -- Transfer chunk
-               | C_Qty      -- Quantity
-               | C_Change   -- Direction of change
-               | C_Comp     -- Comparison against a target
-               | C_Obj      -- Object
-               | C_O        -- "Out" not a chunk
-    deriving (Read, Show, Eq, Ord, Enum, Generic, Bounded)
+data C_Subj     = C_Subj    { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
+                             , fromSubj   :: POS B.Tag          }   -- Owner Name
+        deriving (Show, Eq)
 
-instance ChunkTag ProbChunk where
-    fromChunk = T.pack . show
-    parseChunk txt = toEitherErr $ readEither (T.unpack $ T.append "C_" txt)
-    notChunk = C_O
+data C_Targ     = C_Targ    { targTitle  :: Maybe (POS B.Tag)       -- Target Title
+                            , fromTarg   :: POS B.Tag           }   -- Target Name
+        deriving (Show, Eq)
 
-instance Serialize ProbChunk
+newtype C_Qty    = C_Qty    { fromQty    :: [POS B.Tag]         }   -- Quantity
+        deriving (Show, Eq)
 
-instance Arbitrary ProbChunk where
-    arbitrary = elements [minBound ..]
+newtype C_Change = C_Change { changeDir  :: POS B.Tag           }   -- Direction of change
+        deriving (Show, Eq)
 
-extractChunks :: Either a (ChunkOr ProbChunk tag) -> (ProbChunk, Text)
-extractChunks (Left _) = (notChunk, T.empty)
-extractChunks (Right (Chunk_CN (Chunk chunk tag))) = (chunk, T.unwords $ map extractPOS tag)
-extractPOS (POS_CN p) = (showTok . posToken) p
+data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary obj's actective
+                            , objItem    :: ObjOrMore               -- Only/Primary Object
+                            , objAdj2    :: Maybe (POS B.Tag)       -- Secondary obj
+                            , objObj2    :: Maybe (POS B.Tag)   }   -- Secondary obj's adjective
+        deriving (Show, Eq)
+data ObjOrMore = Obj (POS B.Tag) | More (POS B.Tag)
+        deriving (Show, Eq)
 
+newtype C_Verb  = C_Verb    { fromVerb   :: POS B.Tag           }   -- Verb phrase
+        deriving (Show, Eq)
+
+data C_ActP     = C_AP_Set  { actVerb :: C_Verb                     -- Verb to set inventory
+                            , actQty  :: C_Qty                      -- Number of items
+                            , actObj  :: Maybe C_Obj            }   -- Item or a change
+
+                | C_AP_Chg  { actVerb :: C_Verb                     -- Verb to change inventory
+                            , actQty  :: C_Qty                      -- Number of items
+                            , chgDir  :: Maybe C_Change             -- Direction of change
+                            , actObj  :: Maybe C_Obj            }   -- Item or a change
+
+                | C_AP_Give { actVerb :: C_Verb                     -- Verb to give
+                            , actQty  :: C_Qty                      -- Number of items
+                            , actObj  :: Maybe C_Obj                -- Item or 
+                            , target  :: C_Targ }                   -- Direction of change
+
+                | C_AP_Take { actVerb :: C_Verb                     -- Verb to give
+                            , actQty  :: C_Qty                      -- Number of items
+                            , actObj  :: Maybe C_Obj                -- Item or 
+                            , target  :: C_Targ                 }   -- Direction of change
+        deriving (Show, Eq)
+
+data C_EvtP     = C_EvtP    { probSubjCh :: C_Subj                  -- Event Subject's name
+                            , fromActCh  :: C_ActP              }   -- Event Action Phrase
+        deriving (Show, Eq)
+
+               -- Question asking about a quantity. These won't make assumptions on object ambiguity
+data C_Qst      = C_Qst_Qty { qstObj    :: C_Obj                    -- Object asked about
+                            , qstSubj   :: Maybe C_Subj             -- Subject of question
+                            , qstVerb   :: C_Verb               }   -- Verb for the question
+
+                -- Question asking about a total quantity. These will scope out based on ambiguity
+                | C_Qst_Tot { qstObj    :: C_Obj                    -- Object asked about
+                            , qstSubj   :: Maybe C_Subj             -- Subject of question
+                            , qstVerb   :: C_Verb               }   -- Verb for the question
+        deriving (Show, Eq)
+
+newtype C_Comp  = C_Comp    { fromComp :: POS B.Tag             }   -- Comparison against a target
+        deriving (Show, Eq)
 
 {--------------------------------------------------------------------------------------------------}
 {---                                         VERB CHUNKS                                        ---}
@@ -65,202 +92,235 @@ extractPOS (POS_CN p) = (showTok . posToken) p
 {-  https://hackage.haskell.org/package/chatter-0.9.1.0/docs/NLP-Corpora-Brown.html               -}
 {--------------------------------------------------------------------------------------------------}
 
+-- Separate from singleV valid cases would likely be specific to algebraic questions
+is_v :: Extractor B.Tag C_Verb
+is_v = do
+    is <- (try (posTok B.BEZ)   -- is
+       <|> try (posTok B.BER)   -- are
+       <|> try (posTok B.BEDZ)  -- was
+           <|> (posTok B.BED))  -- were
+    return (C_Verb is)
+
+-- Useful for knowing the event is about setting inventory
+has_v :: Extractor B.Tag C_Verb
+has_v = do
+    is <- (try (posTok B.HVD)   -- had
+       <|> try (posTok B.HVZ)   -- has
+           <|> (posTok B.HV))   -- have
+    return (C_Verb is)
+
 -- Made special case to handle "been"
-hadV :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-hadV = do
-    had <- (try (posTok B.HVD)          -- had (stripped)
-        <|> try (posTok B.HVZ)          -- has
-            <|> (posTok B.HV))          -- have (from "they have" being messed up)
+hasV :: Extractor B.Tag C_Verb
+hasV = do
+    has <- has_v
     _   <-  PC.optional (posTok B.BEN)  -- been (optional and stripped; eg "had been walked")
     v   <- (try (posTok B.VBD)          -- verb, past tense
         <|> try (posTok B.VBN)          -- verb, past participle
             <|> (posTok B.VBG))         -- verb, present participle (-ing)
-    return (mkChunk C_VP [POS_CN v])
+    return (C_Verb v)
 
-wasV :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-wasV = do
-    was <- (try (posTok B.BEDZ) -- was (stripped)
-            <|> (posTok B.BED)) -- were (stripped)
+isV :: Extractor B.Tag C_Verb
+isV = do
+    is <- is_v
     v   <- (try (posTok B.VBG)  -- verb, present participle (-ing)
         <|> try (posTok B.VBN)  -- verb, past participle
             <|> (posTok B.HVG)) -- having
-    return (mkChunk C_VP [POS_CN v])
+    return (C_Verb v)
 
--- parse isVing "gets" $ head $ tag tgr "is jumping over."
-isVing :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+-- >>> parse isVing "ghci" $ head $ tag tgr "is jumping over."
+isVing :: Extractor B.Tag C_Verb
 isVing = do
-    is <- (try (posTok B.BEZ)   -- Can't re-use is_v because it'd nest chunks
-           <|> (posTok B.BER))  -- are
+    is <- is_v
     v  <- (try (posTok B.VBG)   -- verb, present participle (-ing)
            <|> (posTok B.HVG))  -- having
-    return (mkChunk C_VP [POS_CN v])
-
--- Separate from singleV valid cases would likely be specific to algebraic questions
-is_v :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-is_v = do
-    is <- (try (posTok B.BEZ)   -- is
-       <|> try (posTok B.BER)   -- are
-           <|> (posTok B.BEDZ)) -- was ()
-    return (mkChunk C_VP [POS_CN is])
-
--- Useful for knowing the event is about setting inventory
-has_v :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-has_v = do
-    is <- (try (posTok B.HVD)   -- had
-           <|> (posTok B.HVZ))  -- has
-    return (mkChunk C_VP [POS_CN is])
+    return (C_Verb v)
 
 -- parse singleV "gets" $ head $ tag tgr "walked five miles"
-singleV :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+singleV :: Extractor B.Tag C_Verb
 singleV = do 
     v <- (try (posTok B.VBD)    -- verb, past tense
       <|> try (posTok B.VBZ)    -- verb, present tense
           <|> (posTok B.VBN))   -- verb, past participle
-    return (mkChunk C_VP [POS_CN v])
+    return (C_Verb v)
 
 -- Any verb form as a convenience function. Using this doesn't give you any semantic hints
-verb :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-verb = try singleV <|> try is_v <|> try has_v <|> try hadV <|> try wasV <|> isVing
+verb :: Extractor B.Tag C_Verb
+verb = try isVing <|> try hasV <|> try isV <|> try has_v <|> try is_v <|> singleV
+
+-- Includes "have" or any other present verb except "is". Useful for questions.
+presentVerb :: Extractor B.Tag C_Verb
+presentVerb = do
+    v <- (posTok B.HV) <|> posTok B.VB  -- "have" or present verb
+    return (C_Verb v)
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        OWNER CHUNKS                                        ---}
 {--------------------------------------------------------------------------------------------------}
-
 -- Finds the name of the target Owner in a Give or TakeFrom event. This includes an optional title.
 -- "Mrs." is weird, but everything seems ok.
 
 -- try: parse subjName "repl" $ head $ tag tgr "Susan walked ten miles."
 -- The subject always comes immediately before a verb in a word problem. These also include
 -- nominal pronouns (he, they, etc).
-subjName :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+subjName :: Extractor B.Tag C_Subj
 subjName = do
-    t <- PC.optionMaybe (txtTok Sensitive "Mrs") <|> PC.optionMaybe (posTok B.NP)
-    d <- PC.optionMaybe (posTok B.Term)
+    t <- PC.optionMaybe (oneOf Sensitive (map Token titles)) <|> PC.optionMaybe (posTok B.NN)
+    _ <- PC.optionMaybe (posTok B.Term)
     n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> posTok B.PPSS -- Singular Proper Noun
-    lookAhead (posPrefix "VB")
-    return (mkChunk C_Subj $ map (POS_CN . fromJust) (filter isJust [t, d, Just n]))
+    lookAhead (try (posPrefix "V") <|> posPrefix "H")
+    return (C_Subj t n)
+    where
+        titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
 
 -- These don't include nominal pronouns, but do include accusative ones.
-targName :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+targName :: Extractor B.Tag C_Targ
 targName = do
-    t <- PC.optionMaybe (txtTok Sensitive "Mrs") <|> PC.optionMaybe (posTok B.NP)
+    t <- PC.optionMaybe (oneOf Sensitive (map Token titles)) <|> PC.optionMaybe (posTok B.NN)
     d <- PC.optionMaybe (posTok B.Term)
-    n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> try (posTok B.PPSS) <|> posTok B.PPO
-    return (mkChunk C_Targ $ map (POS_CN . fromJust) (filter isJust [t, d, Just n]))
+    n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> try (posTok B.PPSS) <|> try (posTok B.PPO)
+          <|> posTok B.PPdollar
+    return (C_Targ t n)
+    where
+        titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
 
 {--------------------------------------------------------------------------------------------------}
 {---                                       ACTION CHUNKS                                        ---}
 {--------------------------------------------------------------------------------------------------}
 
+adverb :: Extractor B.Tag (POS B.Tag)
+adverb = try (posTok B.RB) <|> try (posTok B.RP) <|> posTok B.RBR
+
+-- Consumes the remainder of a TaggedSentence
+consumeRemainder :: Extractor B.Tag [POS B.Tag]
+consumeRemainder = PC.manyTill anyToken (posTok B.Term)
+
 -- Consumes a number. In some cases, problems will simple say "another" or "the", which would imply
 -- a quantity of 1, so determinants are also allowed.
-number :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-number = try num <|> another
-  where
-    num = do
-        let numWord = posTok B.CD
-        n <- try (PC.many1 $ numWord `PC.sepBy1` (txtTok Sensitive ","))
-        return $ (mkChunk C_Qty . map POS_CN . concat) n
-    another = do
-        n <- posTok B.DT
-        return (mkChunk C_Qty [POS_CN n])
+-- TODO: allow comma-separated blocks
+number :: Extractor B.Tag C_Qty
+number = do
+    n <- PC.many1 (posTok B.CD)
+    return (C_Qty n)
 
--- parse object "repl" $ head $ tag tgr "green boxes of cereal higher than Tom"
-object :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+
+-- Parses an object in an event/question.
+-- Grammar : (ADJ) N ("on/in/of/with") (ART) (ADJ) (N)
+-- >> parse object "repl" $ head $ tag tgr "green boxes of cereal higher than Tom"
+object :: Extractor B.Tag C_Obj
 object = do
-    a <- PC.optionMaybe (posTok B.JJ)     -- adjective (non-comparative/superlative)
-    n <- try (posTok B.NN) <|> try (posTok B.NNS) <|> posTok B.AP
-    _ <- PC.optionMaybe prepNotTransfer  -- restrict "to"/"from"
-    _ <- PC.optionMaybe (posTok B.AT)
+    _ <- PC.optionMaybe (PC.many1 (try (posTok B.DT)    -- determinant  ex: "another"
+                                   <|> (posTok B.AP)))  -- determiner ex: "several", "several more"
+    a <- PC.optionMaybe (posTok B.JJ)                   -- adjective (non-comparative/superlative)
+    n <- (try (posTok B.NN) <|> try (posTok B.NNS)      -- noun(s)
+          <|> posTok B.PPO)                             -- pronoun; eg "them"
+    _ <- PC.optionMaybe prepNotTransfer                 -- preposition, restrict "to"/"from"
+    _ <- PC.optionMaybe (posTok B.AT)                   -- article
     b <- PC.optionMaybe (posTok B.JJ)
     m <- PC.optionMaybe (posTok B.NN) <|> PC.optionMaybe (posTok B.NNS)
-    return (mkChunk C_Obj $ map (POS_CN . fromJust) (filter isJust [a, Just n, b, m]))
+    return (C_Obj a (Obj n) b m)
     where
         prepNotTransfer = oneOf Insensitive (map Token ["on", "in", "of", "with"])
 
--- Optional object where the question implies it. Resolving heuristically in post-processing
-optObj = PC.option unknown object
-  where
-    unknown = mkChunk C_Obj [POS_CN $ POS {posTag = B.NN, posToken = Token "unknown"}]
+-- Optional object where the question implies it. If the object isn't found, it looks for
+-- determiners, such as in cases of "Tom gave Jane five more." This is then resolved
+-- heuristically in post-processing.
+objOrMore :: Extractor B.Tag C_Obj
+objOrMore = try object <|> more
+
+more :: Extractor B.Tag C_Obj
+more = do
+    m <- oneOf Insensitive (map Token ["more", "fewer", "less"])
+    return (C_Obj Nothing (More m) Nothing Nothing)
+
 
 -- Whether something is now more or fewer. Given synonym/antonym checking,
 -- this could be expanded to include JJRs (comparative adjectives).
-change :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-change = do
-    c <- oneOf Insensitive (map Token ["more", "fewer", "less", "another"])
-    return (mkChunk C_Change [POS_CN c])
+change :: Extractor B.Tag (POS B.Tag)
+change = (try (oneOf Insensitive (map Token ["more", "fewer", "less", "another"]))
+      <|> try (posTok B.RBR)    -- Comparative adverbs, e.g. "further", "earlier", etc
+          <|>  posTok B.JJR)    -- Comparative adjectives, e.g. "taller"
 
+-- This is useful as its own chunk so it can be targeted directly in a record.
+changeCh :: Extractor B.Tag C_Change
+changeCh = do
+    c <- change
+    return (C_Change c)
 
-setAP :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+-- Action phrases that set an owner's inventory. These are usually an initial event.
+setAP :: Extractor B.Tag C_ActP
 setAP = do
-    v <- try hadV <|> try wasV <|> try has_v <|> is_v
+    v <- try hasV <|> try isV <|> try has_v <|> is_v
+    _ <- PC.optionMaybe (txtTok Insensitive (Token "another"))
     n <- number
-    o <- optObj
-    return (mkChunk C_Set_AP [v, n, o])
+    o <- PC.optionMaybe objOrMore
+    _ <- consumeRemainder
+    return (C_AP_Set v n o)
 
 
 -- Parses on events that involve addition and subtraction.
-changeAP :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-changeAP = chg1
-
-chg1 :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-chg1 = do
+changeAP :: Extractor B.Tag C_ActP
+changeAP = do
     v   <- verb
-    _   <- PC.optionMaybe (posTok B.RP) -- Adverbs
+    _   <- PC.optionMaybe adverb
     _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
     n   <- number
-    dir <- PC.optionMaybe change -- "more", "fewer", etc
-    o   <- optObj
-    return (mkChunk C_Chg_AP $ map fromJust (filter isJust [Just v, Just n, dir, Just o]))
+    dir <- PC.optionMaybe changeCh      -- "more", "fewer", etc
+    o   <- PC.optionMaybe object
+    _   <- consumeRemainder
+    return (C_AP_Chg v n dir o)
 
-giveAP :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-giveAP = try giveXIt <|> giveItToX
+
+giveAP :: Extractor B.Tag C_ActP
+giveAP = try giveItToX <|> giveXIt
 
 -- Because the syntax includes this ordering and "to <target>", we know there's a transfer.
 -- This parser will only accept a literal "to" token. Therefore, the verb being used has no
 -- grammatically correct way of transferring from the target, so it's irrelevant.
 -- >>> parse giveItToX "repl" $ head $ tag tgr "handed five apples to Alex."
-giveItToX :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+giveItToX :: Extractor B.Tag C_ActP
 giveItToX = do
-    let to = txtTok Insensitive (Token "to")
     v <- verb
-    n <- number
---    _ <- manyTill anyToken (try object <|> (followedBy anyToken (lookAhead to)))
-    o <- object
-    _ <- to
+    _ <- PC.optionMaybe adverb
+    n <- number                         -- Quantity
+    _ <- PC.optionMaybe (txtTok Insensitive (Token "of"))
+    o <- PC.optionMaybe objOrMore
+    _ <- txtTok Insensitive (Token "to")
     t <- targName
-    return (mkChunk C_Give_AP [v, n, o, t])
+    return (C_AP_Give v n o t)
 
 -- This is a slightly unsafe operation, since there might be a 'taking' verb that doesn't require
 -- "from". This can be improved by tagger/chunker training or a semantic database.
-giveXIt :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+giveXIt :: Extractor B.Tag C_ActP
 giveXIt = do
     v <- verb
     t <- targName
     _ <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
     n <- number
-    o <- optObj
-    return (mkChunk C_Give_AP [v, n, o, t])
+    _ <- PC.optionMaybe (txtTok Insensitive (Token "of"))
+    o <- PC.optionMaybe objOrMore
+    return (C_AP_Give v n o t)
 
 -- Because the syntax includes this ordering and "from <target>", the safety is the same as in
 -- 'giveItToX'. However, since there is no easily grammatically correct way of taking from someone
 -- in a sentence without "from", there won't be a pattern mirroring 'giveXIt'.
-takeAP :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+takeAP :: Extractor B.Tag C_ActP
 takeAP = do
     v <- verb
+    _ <- PC.optionMaybe (posTok B.DT)       -- Determinants, e.g. "the", "another", etc
+    _ <- PC.optionMaybe (txtTok Insensitive (Token "of"))
     _ <- PC.optionMaybe (posTok B.DT)
-    n <- number
-    o <- optObj
+    n <- number                             -- Quantity
+    o <- PC.optionMaybe objOrMore
+    _ <- PC.optionMaybe adverb
     _ <- txtTok Insensitive (Token "from")
     t <- targName
-    return (mkChunk C_Take_AP [v, n, o, t])
+    return (C_AP_Take v n o t)
 
-event :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-event = do
+eventCh :: Extractor B.Tag C_EvtP
+eventCh = do
     s <- subjName
-    a <- try setAP <|> try giveAP <|> try takeAP <|> changeAP
-    _ <- PC.manyTill anyToken (txtTok Sensitive ".")
-    return (mkChunk C_Ev [s, a])
+    a <- try setAP <|> try takeAP <|> try giveAP <|> changeAP
+    return (C_EvtP s a)
 
 
 {--------------------------------------------------------------------------------------------------}
@@ -268,31 +328,43 @@ event = do
 {--------------------------------------------------------------------------------------------------}
 
 -- Comparing against; e.g. "more than"
-compare :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+compare :: Extractor B.Tag C_Comp
 compare = do
-    c <- oneOf Insensitive (map Token ["more", "fewer", "less"])
-    t <- txtTok Insensitive (Token "than")
-    return (mkChunk C_Comp [POS_CN c, POS_CN t])
+    c <- change
+    _ <- txtTok Insensitive (Token "than")
+    return (C_Comp c)
 
-howMany1 :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
-howMany1 = do
+
+howMany :: Extractor B.Tag (POS B.Tag)
+howMany = do
     _ <- txtTok Insensitive (Token "How")
-    _ <- oneOf Insensitive [Token "many", Token "much"]
+    oneOf Insensitive [Token "many", Token "much"]
+
+does :: Extractor B.Tag (POS B.Tag)
+does = try (posTok B.DOZ) <|> try (posTok B.DO) <|> posTok B.DOD
+
+
+howManyQst :: Extractor B.Tag C_Qst
+howManyQst = do
+    _ <- howMany
     o <- object
-    _ <- oneOf Insensitive [Token "did", "does"]
+    _ <- does
     s <- PC.optionMaybe subjName
-    v <- posTok B.VB
-    _ <- PC.optionMaybe (txtTok Insensitive "now")
-    _ <- txtTok Insensitive (Token "?")
-    return (mkChunk C_Qst_Qty $ map fromJust (filter isJust [Just o, s, Just (POS_CN v)]))
+    _ <- PC.optionMaybe adverb
+    v <- presentVerb
+    return (C_Qst_Qty o s v)
 
-total :: Extractor B.Tag (ChunkOr ProbChunk B.Tag)
+
+total :: Extractor B.Tag C_Qst
 total = do
-    _ <- txtTok Insensitive (Token "How")
-    _ <- oneOf Insensitive [Token "many", Token "much"]
-    o <- optObj
-    _ <- oneOf Insensitive [Token "did", "does"]
+    _ <- howMany
+    o <- object
+    _ <- does
     s <- PC.optionMaybe subjName
-    v <- posTok B.VB
+    _ <- PC.optionMaybe adverb
+    v <- presentVerb
     _ <- followedBy anyToken (oneOf Insensitive [Token "altogether", Token "total", Token "all"])
-    return (mkChunk C_Qst_Tot $ map fromJust (filter isJust [Just o, s, Just (POS_CN v)]))
+    return (C_Qst_Tot o s v)
+
+questionCh :: Extractor B.Tag C_Qst
+questionCh = try total <|> howManyQst

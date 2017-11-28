@@ -147,8 +147,11 @@ splitBlock block = map clean $ T.splitOn "hundred" block
     clean :: Text -> Text
     clean w = (T.unwords . T.words) $ T.filter stripPunctuation $ T.map hyphenToSpace w
 
-    stripPunctuation = (\c -> c == ' ' || isLetter c)
-    hyphenToSpace = (\c -> bool ' ' c (c /= '-'))
+    stripPunctuation :: Char -> Bool
+    stripPunctuation c = c == ' ' || isLetter c
+
+    hyphenToSpace :: Char -> Char
+    hyphenToSpace c = bool ' ' c (c /= '-')
 
 -- Calculates a block's value, defaulting to 0 if there's invalid input
 -- Words like "one eighty" will be treated as 180, and "nineteen ninety" will be 1990.

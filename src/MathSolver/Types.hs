@@ -9,7 +9,7 @@ data QuestionType = Quantity { subject :: Name }    -- How many does X have?
                             , against :: Name }
                   | Combine Name Name               -- How many do X and Y have total?
                   | CombineAll                      -- How many are there total?
-                        deriving (Show, Eq)
+        deriving (Show, Eq)
 
 data Action = Set { amount :: Integer       -- Sets an owner's capacity of an item
                   , item :: Item }
@@ -25,7 +25,7 @@ data Action = Set { amount :: Integer       -- Sets an owner's capacity of an it
             | TakeFrom { amount :: Integer  -- Owner takes items from a target
                        , item ::Item
                        , from :: Name }
-                deriving (Show, Eq)
+        deriving (Show, Eq)
 
 type Name = Text
 type Item = Text
@@ -37,22 +37,22 @@ type State = [Owner]
 data Owner = NoOne
            | Owner { name :: Name
                    , inventory :: Inventory }
-                deriving (Show, Eq)
+        deriving (Show, Eq)
 
 data Event = Event { owner :: Name
                    , action :: Action }
-                deriving (Show, Eq)
+        deriving (Show, Eq)
 
 data Problem = Problem { question :: Question
                        , events :: [Event] }
-                   deriving (Show, Eq)
+        deriving (Show, Eq)
 
 data Question = Question { questionType :: QuestionType
                          , itemAsked :: Item }
-                    deriving (Show, Eq)
+        deriving (Show, Eq)
 
 data Answer = Unsolvable
             | Answer { answerType :: QuestionType
                      , total :: Amount
                      , itemAnswered :: Item }
-                deriving (Show, Eq)
+        deriving (Show, Eq)

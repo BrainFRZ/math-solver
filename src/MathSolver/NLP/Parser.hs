@@ -3,19 +3,19 @@
 module MathSolver.NLP.Parser where
 
 import Data.Either
-import Data.Text (Text)
+import Data.Text (Text, intersperse)
 import qualified Data.Text as T
 import qualified NLP.Corpora.Brown as B
 import NLP.Extraction.Parsec
 import NLP.POS
 import NLP.Types
 import NLP.Types.Tags
-import NLP.Types.Tree
-import Text.Parsec.Prim ( (<|>), try)
+import NLP.Types.Tree (ChunkOr(..))
+import Text.Parsec.Prim ( (<|>), try, parse)
 import qualified Text.Parsec.Combinator as PC
 import MathSolver.Types
 import MathSolver.NLP.WordNum
-
+import MathSolver.NLP.Combinators
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        Sentence Type                                       ---}
@@ -94,3 +94,22 @@ parseEvtOwner s = undefined
 
 parseQstOwner :: Tag tag => TaggedSentence tag -> Name
 parseQstOwner s = undefined
+
+
+{--------------------------------------------------------------------------------------------------}
+{---                                        CHUNK PARSER                                        ---}
+{--------------------------------------------------------------------------------------------------}
+
+
+
+problem = "Lucy has six apples. John gives her two more. How many apples does she have now?"
+test = do
+    tgr <- brownTagger
+    let t = tag tgr problem
+    let q = rights [parse questionCh "Parser.hs" $ getQst t]
+    let es = rights $ map (parse eventCh "ghci") (getEvs t)
+    putStr "Question: "
+    mapM_ print q
+    putStrLn "Events:"
+    mapM_ print es
+    return ()
