@@ -22,12 +22,18 @@ import NLP.Types.Tree (mkChunk, Token(..), ChunkOr(..), ChunkedSentence(..), Chu
 import MathSolver.NLP.WordNum
 
 
-data C_Subj     = C_Subj    { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
-                             , fromSubj   :: POS B.Tag          }   -- Owner Name
+data C_Owner     = C_Owner  { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
+                            , fromSubj   :: POS B.Tag          }    -- Owner Name
         deriving (Show, Eq)
-
-data C_Targ     = C_Targ    { targTitle  :: Maybe (POS B.Tag)       -- Target Title
-                            , fromTarg   :: POS B.Tag           }   -- Target Name
+data C_Subj     = C_Subj     C_Owner
+        deriving (Show, Eq)
+data C_Subj2    = C_Subj2   { subj1      :: C_Owner                 -- First subject
+                            , subj2      :: C_Owner                 -- Second subject
+                            , isBoth     :: Maybe (POS B.Tag)   }   -- Does it include both?
+                | C_They    { isBoth     :: Maybe (POS B.Tag)   }   -- Does it include both?}
+        deriving (Show, Eq)
+data C_Targ     = C_Targ    { targTitle  :: Maybe (POS B.Tag)       -- Owner Title
+                            , fromTarg   :: POS B.Tag           }   -- Owner Name
         deriving (Show, Eq)
 
 newtype C_Qty    = C_Qty    { fromQty    :: [POS B.Tag]         }   -- Quantity
@@ -41,7 +47,7 @@ data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary o
                             , objAdj2    :: Maybe (POS B.Tag)       -- Secondary obj
                             , objObj2    :: Maybe (POS B.Tag)   }   -- Secondary obj's adjective
         deriving (Show, Eq)
-data ObjOrMore = Obj (POS B.Tag) | More (POS B.Tag)
+data ObjOrMore  = Obj (POS B.Tag) | More (POS B.Tag)
         deriving (Show, Eq)
 
 newtype C_Verb  = C_Verb    { fromVerb   :: POS B.Tag           }   -- Verb phrase
@@ -74,14 +80,34 @@ data C_EvtP     = C_EvtP    { probSubjCh :: C_Subj                  -- Event Sub
                -- Question asking about a quantity. These won't make assumptions on object ambiguity
 data C_Qst      = C_Qst_Qty { qstObj    :: C_Obj                    -- Object asked about
                             , qstSubj   :: Maybe C_Subj             -- Subject of question
-                            , qstVerb   :: C_Verb               }   -- Verb for the question
+                            , qstVerb   :: C_Verb                   -- Verb for the question
+                            , qstAdv    :: Maybe (POS B.Tag)    }   -- Adverb for when useful
 
                 -- Question asking about a total quantity. These will scope out based on ambiguity
                 | C_Qst_Tot { qstObj    :: C_Obj                    -- Object asked about
                             , qstSubj   :: Maybe C_Subj             -- Subject of question
-                            , qstVerb   :: C_Verb               }   -- Verb for the question
-        deriving (Show, Eq)
+                            , qstVerb   :: C_Verb                   -- Verb for the question
+                            , qstAdv    :: Maybe (POS B.Tag)        -- Adverb for when useful
+                            , qstTag    :: POS B.Tag            }   -- Word used for "in total"
 
+                -- Question asking about a total quantity of all subjects.
+                | C_Qst_CB  { qstObj    :: C_Obj                    -- Object asked about
+                            , qstSubjs  :: C_Subj2                  -- Subjects of question
+                            , qstVerb   :: C_Verb                   -- Verb for the question
+                            , qstAdv    :: Maybe (POS B.Tag)        -- Adverb for when useful
+                            , qstOTag   :: Maybe (POS B.Tag)    }   -- Word used for "in total"
+
+                -- Question asking about a total quantity of all subjects.
+                | C_Qst_CA  { qstObj    :: C_Obj                    -- Object asked about
+                            , qstVerb   :: C_Verb                   -- Verb for the question
+                            , qstAdv    :: Maybe (POS B.Tag)        -- Adverb for when useful
+                            , qstTag    :: POS B.Tag            }   -- Word used for "in total"
+
+                | C_Qst_Mod { modQAdv    :: POS B.Tag               -- Adverb asked about; e.g. "long"
+                            , modQMod    :: POS B.Tag               -- Mode of question; e.g. "will"
+                            , modQSubj   :: POS B.Tag               -- Subject of question
+                            , modQVerb   :: POS B.Tag           }   -- Verb in time for the question
+        deriving (Show, Eq)
 newtype C_Comp  = C_Comp    { fromComp :: POS B.Tag             }   -- Comparison against a target
         deriving (Show, Eq)
 
@@ -150,7 +176,8 @@ verb = try isVing <|> try hasV <|> try isV <|> try has_v <|> try is_v <|> single
 -- Includes "have" or any other present verb except "is". Useful for questions.
 presentVerb :: Extractor B.Tag C_Verb
 presentVerb = do
-    v <- (posTok B.HV) <|> posTok B.VB  -- "have" or present verb
+    _ <- PC.optionMaybe adverb
+    v <- try (posTok B.HV) <|> posTok B.VB  -- "have" or present verb
     return (C_Verb v)
 
 {--------------------------------------------------------------------------------------------------}
@@ -164,13 +191,29 @@ presentVerb = do
 -- nominal pronouns (he, they, etc).
 subjName :: Extractor B.Tag C_Subj
 subjName = do
+    s <- subj
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
+    return (C_Subj s)
+
+subj :: Extractor B.Tag C_Owner
+subj = do
     t <- PC.optionMaybe (oneOf Sensitive (map Token titles)) <|> PC.optionMaybe (posTok B.NN)
     _ <- PC.optionMaybe (posTok B.Term)
-    n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> posTok B.PPSS -- Singular Proper Noun
-    lookAhead (try (posPrefix "V") <|> posPrefix "H")
-    return (C_Subj t n)
+    n <- (try (posTok B.NP)                             -- Singular Proper Noun
+      <|> try (posTok B.PPS) <|> try (posTok B.PPSS)    -- Personal Nom Pronoun
+           <|> posTok B.PPO)                            -- Pers Acc Pronoun; "Wrong" but still used
+    return (C_Owner t n)
     where
         titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
+
+subjAndSubj :: Extractor B.Tag C_Subj2
+subjAndSubj = do
+    s1 <- subj
+    _ <- txtTok Sensitive (Token "and")
+    s2 <- subj
+    b <- PC.optionMaybe (txtTok Sensitive (Token "both"))
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
+    return (C_Subj2 s1 s2 b)
 
 -- These don't include nominal pronouns, but do include accusative ones.
 targName :: Extractor B.Tag C_Targ
@@ -284,6 +327,7 @@ giveItToX = do
     n <- number                         -- Quantity
     _ <- PC.optionMaybe (txtTok Insensitive (Token "of"))
     o <- PC.optionMaybe objOrMore
+    _ <- PC.optionMaybe adverb
     _ <- txtTok Insensitive (Token "to")
     t <- targName
     return (C_AP_Give v n o t)
@@ -331,18 +375,40 @@ eventCh = do
 compare :: Extractor B.Tag C_Comp
 compare = do
     c <- change
-    _ <- txtTok Insensitive (Token "than")
+    _ <- txtTok Sensitive (Token "than")
     return (C_Comp c)
 
 
 howMany :: Extractor B.Tag (POS B.Tag)
 howMany = do
     _ <- txtTok Insensitive (Token "How")
-    oneOf Insensitive [Token "many", Token "much"]
+    oneOf Sensitive [Token "many", Token "much"]
 
 does :: Extractor B.Tag (POS B.Tag)
 does = try (posTok B.DOZ) <|> try (posTok B.DO) <|> posTok B.DOD
 
+they :: Extractor B.Tag C_Subj2
+they = do
+    t <- oneOf Insensitive [Token "they", Token "we"]
+    b <- PC.optionMaybe (txtTok Sensitive (Token "both"))
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
+    let s = (C_Owner Nothing t)
+    return (C_Subj2 s s b)
+
+inTotal :: Extractor B.Tag (POS B.Tag)
+inTotal = do
+    _ <- followedBy anyToken (oneOf Sensitive [Token "altogether", Token "total", Token "all"])
+    anyToken
+
+
+modQtyQst :: Extractor B.Tag C_Qst
+modQtyQst = do
+    _ <- txtTok Insensitive (Token "How")
+    a <- adverb
+    m <- posTok B.MD
+    s <- try (posTok B.PPS) <|> try (posTok B.NP)
+    v <- try (posTok B.VB) <|> posPrefix "BE"
+    return (C_Qst_Mod a m s v)
 
 howManyQst :: Extractor B.Tag C_Qst
 howManyQst = do
@@ -350,21 +416,46 @@ howManyQst = do
     o <- object
     _ <- does
     s <- PC.optionMaybe subjName
+    v <- presentVerb
+    a <- PC.optionMaybe adverb
+    return (C_Qst_Qty o s v a)
+
+combineBothQst :: Extractor B.Tag C_Qst
+combineBothQst = do
+    _ <- howMany
+    o <- object
+    _ <- does
+    s <- try subjAndSubj <|> they
     _ <- PC.optionMaybe adverb
     v <- presentVerb
-    return (C_Qst_Qty o s v)
+    a <- PC.optionMaybe adverb
+    t <- PC.optionMaybe (try inTotal <|> txtTok Sensitive (Token "now"))
+    return (C_Qst_CB o s v a t)
 
+combineAllQst :: Extractor B.Tag C_Qst
+combineAllQst = do
+    _ <- howMany
+    o <- object
+    _ <- does
+    _ <- they
+    _ <- PC.optionMaybe adverb
+    v <- presentVerb
+    a <- PC.optionMaybe adverb
+    t <- inTotal
+    return (C_Qst_CA o v a t)
 
-total :: Extractor B.Tag C_Qst
-total = do
+totalQst :: Extractor B.Tag C_Qst
+totalQst = do
     _ <- howMany
     o <- object
     _ <- does
     s <- PC.optionMaybe subjName
     _ <- PC.optionMaybe adverb
     v <- presentVerb
-    _ <- followedBy anyToken (oneOf Insensitive [Token "altogether", Token "total", Token "all"])
-    return (C_Qst_Tot o s v)
+    a <- PC.optionMaybe adverb
+    t <- inTotal
+    return (C_Qst_Tot o s v a t)
 
 questionCh :: Extractor B.Tag C_Qst
-questionCh = try total <|> howManyQst
+questionCh = try modQtyQst <|> try combineAllQst <|> try combineBothQst <|> try totalQst
+                <|> howManyQst
