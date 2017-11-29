@@ -52,6 +52,8 @@ instance Eq Name where
     Someone == They{}                     = True
 
     They{} == Name{}                      = True
+
+
 data Item = Item { itemAdj  :: Maybe Text       -- an adjective, e.g. "large"
                  , fromItem :: Text             -- the main object noun, e.g. "bag"
                  , itemPrep :: Maybe Text       -- a preposition, e.g. "of"
@@ -80,6 +82,7 @@ instance Eq Item where
 
     Something == Item _ _ _ _                       = True
 
+
 type Amount = Integer
 
 type Inventory = [(Item, Amount)]
@@ -99,11 +102,13 @@ data Problem = Problem { question :: Question
         deriving (Show, Eq)
 
 data Question = Question { questionType :: QuestionType
+                         , questionVerb :: Text
                          , itemAsked :: Item }
         deriving (Show, Eq)
 
 data Answer = Unsolvable
             | Answer { answerType :: QuestionType
+                     , answerVerb :: Text
                      , total :: Amount
                      , itemAnswered :: Item }
         deriving (Show, Eq)

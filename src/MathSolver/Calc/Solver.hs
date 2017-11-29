@@ -2,6 +2,7 @@ module MathSolver.Calc.Solver (solve) where
 
 import Data.List (find, foldl')
 import Data.Maybe (fromMaybe, fromJust)
+import Data.Text (Text)
 
 import MathSolver.Types
 
@@ -88,12 +89,12 @@ solve :: Problem -> Answer
 solve (Problem question events) = ask question $ run events
   where
     ask :: Question -> State -> Answer
-    ask (Question (Quantity subject) item) state = Answer (Quantity subject) result item
+    ask (Question (Quantity subject) vb item) state = Answer (Quantity subject) vb result item
         where result = finalQuantity subject item state
 
-    ask (Question (Gain subject) item) state
-        | gainer == NoOne  = Answer (Gain subject) 0 item
-        | otherwise       = Answer (Gain subject) gain item
+    ask (Question (Gain subject) vb item) state
+        | gainer == NoOne  = Answer (Gain subject) vb 0 item
+        | otherwise       = Answer (Gain subject) vb gain item
         where
             gainer = findOwner subject state
             gain = finalAmount - initialAmount initialEvent
@@ -105,26 +106,26 @@ solve (Problem question events) = ask question $ run events
             initialAmount (Event _ (Set amount _)) = amount
             initialAmount ev = 0
 
-    ask (Question (Loss subject) item) state = loss $ ask (Question (Gain subject) item) state
+    ask (Question (Loss subject) vb item) state = loss $ ask (Question (Gain subject) vb item) state
       where
         loss :: Answer -> Answer
-        loss (Answer (Gain subject) gain item) = Answer (Loss subject) (-gain) item
+        loss (Answer (Gain subject) vb gain item) = Answer (Loss subject) vb (-gain) item
 
-    ask (Question (Compare subject target) item) state
-        | subject == target  = Answer (Quantity subject) subjQuantity item
-        | otherwise          = Answer (Compare subject target) diff item
+    ask (Question (Compare subject target) vb item) state
+        | subject == target  = Answer (Quantity subject) vb subjQuantity item
+        | otherwise          = Answer (Compare subject target) vb diff item
         where
             subjQuantity = finalQuantity subject item state
             diff = subjQuantity - finalQuantity target item state
 
-    ask (Question (Combine subj1 subj2) item) state
-        | subj1 == subj2  = Answer (Quantity subj1) subjQuantity item
-        | otherwise       = Answer (Combine subj1 subj2) total item
+    ask (Question (Combine subj1 subj2) vb item) state
+        | subj1 == subj2  = Answer (Quantity subj1) vb subjQuantity item
+        | otherwise       = Answer (Combine subj1 subj2) vb total item
         where
             subjQuantity = finalQuantity subj1 item state
             total = subjQuantity + finalQuantity subj2 item state
 
-    ask (Question CombineAll item) state = Answer CombineAll total item
+    ask (Question CombineAll vb item) state = Answer CombineAll vb total item
       where
         hasItem = item `elem` map fst (concatMap inventory state)
         total

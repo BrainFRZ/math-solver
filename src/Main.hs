@@ -48,7 +48,7 @@ solveProblem :: POSTagger B.Tag -> IO ()
 solveProblem tgr = do
     putStr "Enter a problem: "
     problem <- getLine
-    let p = preproc $ tag tgr problem
+    let p   = preproc $ tag tgr problem
     let q   = postprocQst $ head $ rights [parse questionCh "Main.hs, line 51" (getQst p)]
     let evs = postprocEvs $ rights (map (parse eventCh "Main.hs, line 52") (getEvs p))
     putStrLn $ writeAnswer $ solve (getProblem q evs)

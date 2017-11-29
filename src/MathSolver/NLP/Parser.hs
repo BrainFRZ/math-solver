@@ -95,9 +95,11 @@ getItemMaybe (Just i) = getItem i
 
 
 getQuestion :: C_Qst -> Question
-getQuestion q@C_Qst_Mod{} = Question (getQstType q)
-                                             (Item Nothing (showPOStok $modQSubj q) Nothing Nothing)
-getQuestion q = Question (getQstType q) (getItem $ qstObj q)
+getQuestion q@C_Qst_Mod{} = Question (getQstType q) (showPOStok $ modQVerb q)
+                                (Item Nothing (showPOStok $ modQSubj q) Nothing Nothing)
+getQuestion q = Question (getQstType q) (showPOStok $ fromVerb $ qstVerb q) (getItem $ qstObj q)
+
+
 
 
 getQstType :: C_Qst -> QuestionType
@@ -169,21 +171,21 @@ writeAnswer = T.pack . showAnswer
 
 showAnswer :: Answer -> String
 showAnswer Unsolvable = "There isn't enough information to answer this question. :("
-showAnswer (Answer (Quantity n) amt i) = 
-    writeName n ++ " has " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
-showAnswer (Answer (Total n) amt i) =
-    writeName n ++ " has " ++ fromAmt amt ++ " " ++ writeItem i ++ " in total."
-showAnswer (Answer (Gain n) amt i) =
-    writeName n ++ " got " ++ fromAmt amt ++ " more " ++ writeItem i ++ "."
-showAnswer (Answer (Loss n) amt i) =
+showAnswer (Answer (Quantity n) vb amt i) = 
+    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
+showAnswer (Answer (Total n) vb amt i) =
+    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " " ++ writeItem i ++ " in total."
+showAnswer (Answer (Gain n) vb amt i) =
+    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " more " ++ writeItem i ++ "."
+showAnswer (Answer (Loss n) vb amt i) =
     writeName n ++ " lost " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
-showAnswer (Answer (Compare n targ) amt i) =
-    writeName n ++ " has " ++ fromAmt amt ++ " more " ++ writeItem i ++ " than "
+showAnswer (Answer (Compare n targ) vb amt i) =
+    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " more " ++ writeItem i ++ " than "
     ++ writeName targ ++ "."
-showAnswer (Answer (Combine subj1 subj2) amt i) = 
-    writeName subj1 ++ " and " ++ writeName subj2 ++ " have " ++ fromAmt amt ++ " "
+showAnswer (Answer (Combine subj1 subj2) vb amt i) = 
+    writeName subj1 ++ " and " ++ writeName subj2 ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " "
     ++ writeItem i ++ " combined."
-showAnswer (Answer CombineAll amt i) =
+showAnswer (Answer CombineAll _ amt i) =
     "There are " ++ fromAmt amt ++ " " ++ writeItem i ++ " altogether."
 
 -- Converts the solution quantity into a written number
@@ -197,3 +199,7 @@ writeName = show
 -- Writes an item from an answer
 writeItem :: Item -> String
 writeItem = show
+
+-- Writes a verb from an answer
+writeVerb :: Text -> String
+writeVerb = T.unpack

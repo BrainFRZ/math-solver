@@ -185,7 +185,7 @@ singleV = do
 -- deal with verbs. For example, "grabs" gets tagged as a plural noun. I'll add them here to be
 -- checked as a failsafe as I run across them.
 brokenVerbs :: Extractor B.Tag (POS B.Tag)
-brokenVerbs = oneOf Sensitive (map Token ["grabs", "books"])
+brokenVerbs = oneOf Sensitive (map Token ["grabs", "books", "run"])
 
 -- Any verb form as a convenience function. Using this doesn't give you any semantic hints
 verb :: Extractor B.Tag C_Verb
@@ -195,7 +195,8 @@ verb = try isVing <|> try hasV <|> try isV <|> try has_v <|> try is_v <|> single
 presentVerb :: Extractor B.Tag C_Verb
 presentVerb = do
     _ <- PC.optionMaybe adverb
-    v <- try (posTok B.HV) <|> posTok B.VB  -- "have" or present verb
+    v <- (try (posTok B.HV) <|> try (posTok B.VB)  -- "have" or present verb
+          <|> brokenVerbs)
     return (C_Verb v)
 
 {--------------------------------------------------------------------------------------------------}
@@ -230,7 +231,7 @@ subjAndSubj = do
     _ <- txtTok Sensitive (Token "and")
     s2 <- subj
     b <- PC.optionMaybe (txtTok Sensitive (Token "both"))
-    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> try (posPrefix "R") <|> brokenVerbs)
     return (C_Subj2 s1 s2 b)
 
 -- These don't include nominal pronouns, but do include accusative ones.
