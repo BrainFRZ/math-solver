@@ -43,7 +43,6 @@ addItem item amount inv
 
 set :: Name -> Item -> Amount -> State -> State
 set owner item amount state
-    | T.null item                      = state
     | amount == 0 && not ownerKnown  = Owner owner [] : state
     | amount /= 0 && not ownerKnown  = Owner owner [(item, amount)] : state
     | amount == 0                    = o : xs ++ ys
@@ -54,7 +53,6 @@ set owner item amount state
 
 add :: Name -> Item -> Amount -> State -> State
 add owner item amount state
-    | T.null item                      = state
     | amount == 0 && not ownerKnown  = Owner owner [] : state
     | amount /= 0 && not ownerKnown  = Owner owner [(item, amount)] : state
     | amount == 0                    = o : xs ++ ys
@@ -179,7 +177,7 @@ eval state (Event owner (TakeFrom amount item target)) = takeFrom owner item amo
 {--------------------------------------------------------------------------------------------------}
 {---                                        TEST STATES                                         ---}
 {--------------------------------------------------------------------------------------------------}
-
+{-
 state1 = [Owner "Tom" [("apples",5), ("bananas",10)]]
 state2 = [Owner "Jane" [("apples",10)], Owner "Tom" [("apples",5),("bananas",10)]]
 
@@ -200,3 +198,4 @@ combineAll = solve (Problem (Question CombineAll "apples") events1)
 
 gain1 = solve (Problem (Question (Gain "Tom") "apples") events1)
 gain2 = solve (Problem (Question (Gain "Jane") "apples") events1)
+-}

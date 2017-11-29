@@ -22,10 +22,10 @@ import NLP.Types.Tree (mkChunk, Token(..), ChunkOr(..), ChunkedSentence(..), Chu
 import MathSolver.NLP.WordNum
 
 
-data C_Owner     = C_Owner  { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
-                            , fromSubj   :: POS B.Tag          }    -- Owner Name
+data C_Owner    = C_Owner   { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
+                            , fromSubj   :: POS B.Tag           }   -- Owner Name
         deriving (Show, Eq)
-data C_Subj     = C_Subj     C_Owner
+newtype C_Subj  = C_Subj    { subjToOwner :: C_Owner            }
         deriving (Show, Eq)
 data C_Subj2    = C_Subj2   { subj1      :: C_Owner                 -- First subject
                             , subj2      :: C_Owner                 -- Second subject
@@ -36,7 +36,7 @@ data C_Targ     = C_Targ    { targTitle  :: Maybe (POS B.Tag)       -- Owner Tit
                             , fromTarg   :: POS B.Tag           }   -- Owner Name
         deriving (Show, Eq)
 
-newtype C_Qty    = C_Qty    { fromQty    :: [POS B.Tag]         }   -- Quantity
+newtype C_Qty   = C_Qty     { fromQty    :: [POS B.Tag]         }   -- Quantity
         deriving (Show, Eq)
 
 newtype C_Change = C_Change { changeDir  :: POS B.Tag           }   -- Direction of change
@@ -47,8 +47,18 @@ data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary o
                             , objAdj2    :: Maybe (POS B.Tag)       -- Secondary obj
                             , objObj2    :: Maybe (POS B.Tag)   }   -- Secondary obj's adjective
         deriving (Show, Eq)
-data ObjOrMore  = Obj (POS B.Tag) | More (POS B.Tag)
+data ObjOrMore  = Obj { fromObj :: POS B.Tag }
+                | More { fromMore :: (POS B.Tag) }
         deriving (Show, Eq)
+
+isObj :: ObjOrMore -> Bool
+isObj (Obj _) = True
+isObj _ = False
+
+isMore :: ObjOrMore -> Bool
+isMore (More _) = True
+isMore _ = False
+
 
 newtype C_Verb  = C_Verb    { fromVerb   :: POS B.Tag           }   -- Verb phrase
         deriving (Show, Eq)
@@ -166,8 +176,15 @@ singleV :: Extractor B.Tag C_Verb
 singleV = do 
     v <- (try (posTok B.VBD)    -- verb, past tense
       <|> try (posTok B.VBZ)    -- verb, present tense
-          <|> (posTok B.VBN))   -- verb, past participle
+      <|> try (posTok B.VBN)    -- verb, past participle
+           <|> brokenVerbs)     -- Verbs that get mis-tagged
     return (C_Verb v)
+
+-- The tagger will sometimes get confused and break on valid problems. This is usually only a big
+-- deal with verbs. For example, "grabs" gets tagged as a plural noun. I'll add them here to be
+-- checked as a failsafe as I run across them.
+brokenVerbs :: Extractor B.Tag (POS B.Tag)
+brokenVerbs = oneOf Sensitive (map Token ["grabs", "books"])
 
 -- Any verb form as a convenience function. Using this doesn't give you any semantic hints
 verb :: Extractor B.Tag C_Verb
@@ -192,7 +209,7 @@ presentVerb = do
 subjName :: Extractor B.Tag C_Subj
 subjName = do
     s <- subj
-    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> try (posPrefix "R") <|> brokenVerbs)
     return (C_Subj s)
 
 subj :: Extractor B.Tag C_Owner

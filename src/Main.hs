@@ -17,9 +17,11 @@ import Text.Read (readMaybe)
 import MathSolver.NLP.Combinators
 import MathSolver.NLP.Parser
 import MathSolver.NLP.WordNum
+import MathSolver.Calc.Solver
 
 menuOpts :: M.Map Text (POSTagger B.Tag -> IO ())
-menuOpts = M.fromList [("WFI", wordFromInt), ("TP", tagProblem), ("PP", parseProblem)]
+menuOpts = M.fromList [("WFI", wordFromInt), ("TP", tagProblem), ("PP", parseProblem),
+        ("SP", solveProblem)]
 
 main :: IO ()
 main = do 
@@ -42,6 +44,17 @@ execute :: (POSTagger B.Tag -> IO ()) -> POSTagger B.Tag -> IO ()
 execute fun = fun
 
 
+solveProblem :: POSTagger B.Tag -> IO ()
+solveProblem tgr = do
+    putStr "Enter a problem: "
+    problem <- getLine
+    let p = preproc $ tag tgr problem
+    let q   = postprocQst $ head $ rights [parse questionCh "Main.hs, line 51" (getQst p)]
+    let evs = postprocEvs $ rights (map (parse eventCh "Main.hs, line 52") (getEvs p))
+    print $ solve (getProblem q evs)
+    menu tgr
+
+
 wordFromInt :: POSTagger B.Tag -> IO ()
 wordFromInt tgr = do putStr "Enter an integer: "
                      line <- getLine
@@ -61,7 +74,7 @@ parseProblem tgr = do
     problem <- getLine
     let p = tag tgr problem
     putStr "Question: "
-    mapM_ print $ rights [parse questionCh "Main.hs, line 64" (last p)]
+    mapM_ print $ rights [parse questionCh "Main.hs, line 76" (getQst p)]
     putStrLn "Events:"
-    mapM_ print $ rights (map (parse eventCh "Main.hs, line 66") (init p))
-    return ()
+    mapM_ print $ rights (map (parse eventCh "Main.hs, line 78") (getEvs p))
+

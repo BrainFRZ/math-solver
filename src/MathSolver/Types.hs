@@ -1,8 +1,15 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module MathSolver.Types where
 
 import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Maybe (Maybe(..), fromJust, fromMaybe)
+import qualified Data.Set as S
+
 
 data QuestionType = Quantity { subject :: Name }    -- How many does X have?
+                  | Total { subject :: Name }       -- How much does X have in total?
                   | Gain { subject :: Name }        -- How many has X gained?
                   | Loss { subject :: Name }        -- How many has X lost?
                   | Compare { subject :: Name       -- How many more does X have than Y?
@@ -20,15 +27,54 @@ data Action = Set { amount :: Integer       -- Sets an owner's capacity of an it
             | Empty { item :: Item }        -- Owner loses all of an item
             | Reset                         -- Owner loses everything
             | Give { amount :: Integer      -- Owner gives to a target
-                   , item ::Item
-                   , to :: Name }
+                   , item   :: Item
+                   , to     :: Name }
             | TakeFrom { amount :: Integer  -- Owner takes items from a target
-                       , item ::Item
-                       , from :: Name }
+                       , item   :: Item
+                       , from   :: Name }
         deriving (Show, Eq)
 
-type Name = Text
-type Item = Text
+data Name = Name { title :: Maybe Text, getName :: Text }
+          | Someone     -- Owner was implied and couldn't be resolved
+instance Show Name where
+    show (Name Nothing n) = T.unpack n
+    show (Name t n) = T.unpack (fromJust t) ++ ". " ++ T.unpack n
+
+    show Someone = "someone"
+instance Eq Name where
+    Name (Just t) n == Name (Just t') n'  = t == t' && n == n'
+    Name _ n == Name _ n'                 = n == n'
+
+    Someone == Name _ _                   = True
+
+data Item = Item { itemAdj  :: Maybe Text       -- an adjective, e.g. "large"
+                 , fromItem :: Text             -- the main object noun, e.g. "bag"
+                 , itemPrep :: Maybe Text       -- a preposition, e.g. "of"
+                 , itemObj  :: Maybe Text }     -- Indirect object, e.g. "cereal"
+
+          | Something                           -- Item was implied and couldn't be resolved
+instance Show Item where
+    show (Item adj itm prep obj) = mtSpace adj ++ T.unpack itm ++ spaceMT prep ++ spaceMT obj
+      where
+        spaceMT :: Maybe Text -> [Char]
+        spaceMT Nothing = ""
+        spaceMT (Just t) = " " ++ T.unpack t
+
+        mtSpace :: Maybe Text -> [Char]
+        mtSpace Nothing = ""
+        mtSpace (Just t) = T.unpack t ++ " "
+
+    show Something = "something"
+
+instance Eq Item where
+    Item (Just a) i _ (Just o) == Item (Just a') i' _ (Just o')
+            = [a,o] == [a',o'] && i == i'
+    Item _ i _ (Just o) == Item _ i' _ (Just o')    = o == o' && i == i'
+    Item (Just a) i _ _ == Item (Just a') i' _ _    = a == a' && i == i'
+    Item _ i _ _ == Item _ i' _ _                   = i == i'
+
+    Something == Item _ _ _ _                       = True
+
 type Amount = Integer
 
 type Inventory = [(Item, Amount)]
