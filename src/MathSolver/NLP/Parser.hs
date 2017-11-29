@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module MathSolver.NLP.Parser (getProblem, preproc, postprocEvs, postprocQst, getQst, getEvs) where
+module MathSolver.NLP.Parser ( getProblem, preproc, postprocEvs, postprocQst, writeAnswer
+                             , getQst, getEvs ) where
 
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
@@ -156,3 +157,43 @@ changeActs = M.fromList (addList ++ remList)
     remList :: [(Text, Integer -> Item -> Action)]
     remList = map (\w -> (w, Remove)) ["blew","blows","dropped","drops","dumped","dumps","eats",
         "flew","flies","leaves","left","loses","lost","put","puts","remove","removes","removed"]
+
+
+{--------------------------------------------------------------------------------------------------}
+{---                                       ANSWER PARSER                                        ---}
+{--------------------------------------------------------------------------------------------------}
+
+-- Translates the Solver's answer output into plain English
+writeAnswer :: Answer -> Text
+writeAnswer = T.pack . showAnswer
+
+showAnswer :: Answer -> String
+showAnswer Unsolvable = "There isn't enough information to answer this question. :("
+showAnswer (Answer (Quantity n) amt i) = 
+    writeName n ++ " has " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
+showAnswer (Answer (Total n) amt i) =
+    writeName n ++ " has " ++ fromAmt amt ++ " " ++ writeItem i ++ " in total."
+showAnswer (Answer (Gain n) amt i) =
+    writeName n ++ " got " ++ fromAmt amt ++ " more " ++ writeItem i ++ "."
+showAnswer (Answer (Loss n) amt i) =
+    writeName n ++ " lost " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
+showAnswer (Answer (Compare n targ) amt i) =
+    writeName n ++ " has " ++ fromAmt amt ++ " more " ++ writeItem i ++ " than "
+    ++ writeName targ ++ "."
+showAnswer (Answer (Combine subj1 subj2) amt i) = 
+    writeName subj1 ++ " and " ++ writeName subj2 ++ " have " ++ fromAmt amt ++ " "
+    ++ writeItem i ++ " combined."
+showAnswer (Answer CombineAll amt i) =
+    "There are " ++ fromAmt amt ++ " " ++ writeItem i ++ " altogether."
+
+-- Converts the solution quantity into a written number
+fromAmt :: Amount -> String
+fromAmt = T.unpack . numToWord
+
+-- Writes a name from an answer
+writeName :: Name -> String
+writeName = show
+
+-- Writes an item from an answer
+writeItem :: Item -> String
+writeItem = show

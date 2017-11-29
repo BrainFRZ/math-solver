@@ -51,7 +51,7 @@ solveProblem tgr = do
     let p = preproc $ tag tgr problem
     let q   = postprocQst $ head $ rights [parse questionCh "Main.hs, line 51" (getQst p)]
     let evs = postprocEvs $ rights (map (parse eventCh "Main.hs, line 52") (getEvs p))
-    print $ solve (getProblem q evs)
+    putStrLn $ writeAnswer $ solve (getProblem q evs)
     menu tgr
 
 
