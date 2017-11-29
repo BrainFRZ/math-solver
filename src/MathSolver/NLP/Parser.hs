@@ -1,21 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module MathSolver.NLP.Parser where
+module MathSolver.NLP.Parser (getProblem, preproc, postprocEvs, postprocQst, getQst, getEvs) where
 
-import Data.Either
 import qualified Data.Map.Strict as M
-import Data.Text (Text, intersperse)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (fromMaybe)
 import qualified NLP.Corpora.Brown as B
-import NLP.Extraction.Parsec
-import NLP.POS
-import NLP.Types
-import NLP.Types.Tags
-import NLP.Types.Tree (ChunkOr(..))
-import Text.Parsec.Prim ( (<|>), try, parse)
-import qualified Text.Parsec.Combinator as PC
+import NLP.Types (TaggedSentence)
+import NLP.Types.Tree (ChunkOr(..), POS(..), showPOStok)
 import MathSolver.Types
+import MathSolver.Calc.Solver
 import MathSolver.NLP.WordNum
 import MathSolver.NLP.Combinators
 
@@ -40,7 +35,7 @@ preproc txt = txt
 
 {-
 Todo:
-    Replace pronouns with most recent Subject; risky without better, but seems safe enough
+    Replace pronouns with most recent Subject; risky without better semantic inference, but seems safe enough
 -}
 
 postprocQst :: C_Qst -> C_Qst
@@ -99,23 +94,24 @@ getItemMaybe (Just i) = getItem i
 
 
 getQuestion :: C_Qst -> Question
-getQuestion q@(C_Qst_Mod _ _ _ _) = Question (getQstType q)
+getQuestion q@C_Qst_Mod{} = Question (getQstType q)
                                              (Item Nothing (showPOStok $modQSubj q) Nothing Nothing)
 getQuestion q = Question (getQstType q) (getItem $ qstObj q)
 
 
 getQstType :: C_Qst -> QuestionType
-getQstType (C_Qst_Qty _ Nothing _ _)     = Quantity Someone
-getQstType (C_Qst_Qty _ (Just s) _ _)    = Quantity (getOwner $ subjToOwner s)
-getQstType (C_Qst_Tot _ Nothing _ _ _)   = Total Someone
-getQstType (C_Qst_Tot _ (Just s) _ _ _)  = Total (getOwner $ subjToOwner s)
-getQstType (C_Qst_CA _ _ _ _)            = CombineAll
-getQstType (C_Qst_Mod _ s _ _)           = Quantity (Name Nothing (showPOStok s))  -- Modal qst type
-getQstType (C_Qst_CB _ (C_They _) _ _ _) = CombineAll
-getQstType (C_Qst_CB _ s _ _ _)          = Combine (getOwner s1) (getOwner s2)
-  where
-    s1 = subj1 s
-    s2 = subj2 s
+getQstType (C_Qst_Qty _ Nothing _ _)       = Quantity Someone
+getQstType (C_Qst_Qty _ (Just s) _ _)      = Quantity (getOwner $ subjToOwner s)
+getQstType (C_Qst_Tot _ Nothing _ _ _)     = Total Someone
+getQstType (C_Qst_Tot _ (Just s) _ _ _)    = Total (getOwner $ subjToOwner s)
+getQstType  C_Qst_CA{}                     = CombineAll
+getQstType (C_Qst_Mod _ s _ _)             = Quantity (Name Nothing (showPOStok s))  -- Modal qst type
+getQstType (C_Qst_CB _ (C_They t _) _ _ _) = CombineAll
+getQstType (C_Qst_CB _ s _ _ _)            = Combine (getOwner s1) (getOwner s2)
+    where
+--        owner = showPOStok $ fromSubj (subjToOwner s)
+        s1 = subj1 s
+        s2 = subj2 s
 
 
 getEvents :: [C_EvtP] -> [Event]
@@ -152,21 +148,11 @@ getChangeAction v q i = vbAction qty item
 changeActs :: M.Map Text (Integer -> Item -> Action)
 changeActs = M.fromList (addList ++ remList)
   where
-    addList :: [(Text,(Integer -> Item -> Action))]
+    addList :: [(Text, Integer -> Item -> Action)]
     addList = map (\w -> (w, Add)) ["add","added","bought","buys","catches","caught","finds",
         "found","gets","got","grabs","made","makes","picked","picks","played","plays","read",
         "reads","takes","took"]
 
-    remList :: [(Text,(Integer -> Item -> Action))]
+    remList :: [(Text, Integer -> Item -> Action)]
     remList = map (\w -> (w, Remove)) ["blew","blows","dropped","drops","dumped","dumps","eats",
         "flew","flies","leaves","left","loses","lost","put","puts","remove","removes","removed"]
-
-
-
-
-
-
-
-
-
-

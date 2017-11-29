@@ -1,10 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module MathSolver.Calc.Solver (solve) where
 
-import Data.List
-import Data.Maybe
-import qualified Data.Text as T
+import Data.List (find, foldl')
+import Data.Maybe (fromMaybe, fromJust)
 
 import MathSolver.Types
 

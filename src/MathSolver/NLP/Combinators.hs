@@ -30,7 +30,8 @@ newtype C_Subj  = C_Subj    { subjToOwner :: C_Owner            }
 data C_Subj2    = C_Subj2   { subj1      :: C_Owner                 -- First subject
                             , subj2      :: C_Owner                 -- Second subject
                             , isBoth     :: Maybe (POS B.Tag)   }   -- Does it include both?
-                | C_They    { isBoth     :: Maybe (POS B.Tag)   }   -- Does it include both?}
+                | C_They    { fromThey   :: POS B.Tag               -- "they" vs "we"
+                            , isBoth     :: Maybe (POS B.Tag)   }   -- Does it include both?
         deriving (Show, Eq)
 data C_Targ     = C_Targ    { targTitle  :: Maybe (POS B.Tag)       -- Owner Title
                             , fromTarg   :: POS B.Tag           }   -- Owner Name
@@ -409,8 +410,8 @@ they = do
     t <- oneOf Insensitive [Token "they", Token "we"]
     b <- PC.optionMaybe (txtTok Sensitive (Token "both"))
     lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> posPrefix "R")
-    let s = (C_Owner Nothing t)
-    return (C_Subj2 s s b)
+    let s = C_Owner Nothing t
+    return (C_They t b)
 
 inTotal :: Extractor B.Tag (POS B.Tag)
 inTotal = do

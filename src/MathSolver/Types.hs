@@ -36,17 +36,22 @@ data Action = Set { amount :: Integer       -- Sets an owner's capacity of an it
 
 data Name = Name { title :: Maybe Text, getName :: Text }
           | Someone     -- Owner was implied and couldn't be resolved
+          | They { getName :: Text }
 instance Show Name where
     show (Name Nothing n) = T.unpack n
     show (Name t n) = T.unpack (fromJust t) ++ ". " ++ T.unpack n
 
     show Someone = "someone"
+
+    show (They t) = T.unpack t
 instance Eq Name where
     Name (Just t) n == Name (Just t') n'  = t == t' && n == n'
     Name _ n == Name _ n'                 = n == n'
 
-    Someone == Name _ _                   = True
+    Someone == Name{}                     = True
+    Someone == They{}                     = True
 
+    They{} == Name{}                      = True
 data Item = Item { itemAdj  :: Maybe Text       -- an adjective, e.g. "large"
                  , fromItem :: Text             -- the main object noun, e.g. "bag"
                  , itemPrep :: Maybe Text       -- a preposition, e.g. "of"
