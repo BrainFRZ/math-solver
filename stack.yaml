@@ -46,7 +46,8 @@ extra-deps: [split-0.2.3.2
            , tokenize-0.3.0
            , text-1.2.2.2
            , containers-0.5.10.2
-           , QuickCheck-2.9.2]
+           , QuickCheck-2.9.2
+           , stemmer-0.5.2]
 
 # Override default flag values for local packages and extra-deps
 flags: {}

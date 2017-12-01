@@ -6,6 +6,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (Maybe(..), fromJust, fromMaybe)
 import qualified Data.Set as S
+import NLP.Stemmer (stem, Stemmer(English) )
 
 
 data QuestionType = Quantity { subject :: Name }    -- How many does X have?
@@ -78,12 +79,15 @@ instance Show Item where
 
 instance Eq Item where
     Item (Just a) i _ (Just o) == Item (Just a') i' _ (Just o')
-            = [a,o] == [a',o'] && i == i'
-    Item _ i _ (Just o) == Item _ i' _ (Just o')    = o == o' && i == i'
-    Item (Just a) i _ _ == Item (Just a') i' _ _    = a == a' && i == i'
-    Item _ i _ _ == Item _ i' _ _                   = i == i'
+            = [a,o] == [a',o'] && stemTxt i == stemTxt i'
+    Item _ i _ (Just o) == Item _ i' _ (Just o')    = o == o' && stemTxt i == stemTxt i'
+    Item (Just a) i _ _ == Item (Just a') i' _ _    = a == a' && stemTxt i == stemTxt i'
+    Item _ i _ _ == Item _ i' _ _                   = stemTxt i == stemTxt i'
 
     Something == Item{}                             = True
+
+stemTxt :: Text -> Text
+stemTxt = T.pack . stem English . T.unpack
 
 
 type Amount = Integer
