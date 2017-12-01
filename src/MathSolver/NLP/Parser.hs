@@ -4,6 +4,7 @@ module MathSolver.NLP.Parser ( getProblem, preproc, postprocEvs, postprocQst, wr
                              , getQst, getEvs ) where
 
 import qualified Data.Map.Strict as M
+import Data.Char (toUpper)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (fromMaybe)
@@ -27,7 +28,7 @@ Todo:
 -}
 
 preproc :: [TaggedSentence B.Tag] -> [TaggedSentence B.Tag]
-preproc txt = txt
+preproc = id
 
 
 {--------------------------------------------------------------------------------------------------}
@@ -40,10 +41,10 @@ Todo:
 -}
 
 postprocQst :: C_Qst -> C_Qst
-postprocQst qst = qst
+postprocQst = id
 
 postprocEvs :: [C_EvtP] -> [C_EvtP]
-postprocEvs evs = evs
+postprocEvs = id
 
 {--------------------------------------------------------------------------------------------------}
 {---                                       Problem Parser                                       ---}
@@ -103,14 +104,14 @@ getQuestion q = Question (getQstType q) (showPOStok $ fromVerb $ qstVerb q) (get
 
 
 getQstType :: C_Qst -> QuestionType
-getQstType (C_Qst_Qty _ Nothing _ _)       = Quantity Someone
-getQstType (C_Qst_Qty _ (Just s) _ _)      = Quantity (getOwner $ subjToOwner s)
-getQstType (C_Qst_Tot _ Nothing _ _ _)     = Total Someone
-getQstType (C_Qst_Tot _ (Just s) _ _ _)    = Total (getOwner $ subjToOwner s)
-getQstType  C_Qst_CA{}                     = CombineAll
-getQstType (C_Qst_Mod _ s _ _)             = Quantity (Name Nothing (showPOStok s))  -- Modal qst type
-getQstType (C_Qst_CB _ (C_They t _) _ _ _) = CombineAll
-getQstType (C_Qst_CB _ s _ _ _)            = Combine (getOwner s1) (getOwner s2)
+getQstType (C_Qst_Qty _ Nothing _ _)         = Quantity Someone
+getQstType (C_Qst_Qty _ (Just s) _ _)        = Quantity (getOwner $ subjToOwner s)
+getQstType (C_Qst_Tot _ Nothing _ _ _)       = Total Someone
+getQstType (C_Qst_Tot _ (Just s) _ _ _)      = Total (getOwner $ subjToOwner s)
+getQstType  C_Qst_CA{}                       = CombineAll
+getQstType (C_Qst_Mod _ s _ _)               = Quantity (Name Nothing (showPOStok s))  -- Modal qst type
+getQstType (C_Qst_CB _ (C_They t _) _ _ _)   = Quantity (They (showPOStok t))
+getQstType (C_Qst_CB _ s _ _ _)              = Combine (getOwner s1) (getOwner s2)
     where
 --        owner = showPOStok $ fromSubj (subjToOwner s)
         s1 = subj1 s
@@ -167,7 +168,9 @@ changeActs = M.fromList (addList ++ remList)
 
 -- Translates the Solver's answer output into plain English
 writeAnswer :: Answer -> Text
-writeAnswer = T.pack . showAnswer
+writeAnswer a = T.pack $ answer (showAnswer a)
+  where
+    answer (c:cs) = toUpper c : cs
 
 showAnswer :: Answer -> String
 showAnswer Unsolvable = "There isn't enough information to answer this question. :("

@@ -47,11 +47,14 @@ instance Show Name where
 instance Eq Name where
     Name (Just t) n == Name (Just t') n'  = t == t' && n == n'
     Name _ n == Name _ n'                 = n == n'
+    Name{} == They{}                      = True
+    Name{} == Someone                     = True
 
     Someone == Name{}                     = True
     Someone == They{}                     = True
 
     They{} == Name{}                      = True
+    They{} == Someone                     = True
 
 
 data Item = Item { itemAdj  :: Maybe Text       -- an adjective, e.g. "large"
@@ -80,7 +83,7 @@ instance Eq Item where
     Item (Just a) i _ _ == Item (Just a') i' _ _    = a == a' && i == i'
     Item _ i _ _ == Item _ i' _ _                   = i == i'
 
-    Something == Item _ _ _ _                       = True
+    Something == Item{}                             = True
 
 
 type Amount = Integer

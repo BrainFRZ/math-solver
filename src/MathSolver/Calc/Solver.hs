@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module MathSolver.Calc.Solver (solve) where
 
 import Data.List (find, foldl')
@@ -89,6 +91,9 @@ solve :: Problem -> Answer
 solve (Problem question events) = ask question $ run events
   where
     ask :: Question -> State -> Answer
+    ask (Question (Quantity (They t)) vb item) state = Answer (Quantity (They t)) vb result item
+        where result = sum $ map (hasAmount item . inventory) state
+
     ask (Question (Quantity subject) vb item) state = Answer (Quantity subject) vb result item
         where result = finalQuantity subject item state
 
@@ -145,7 +150,7 @@ solve (Problem question events) = ask question $ run events
 
     -- If no info given, default to 0
     hasAmount :: Item -> Inventory -> Amount
-    hasAmount item inv = fromMaybe 0 (lookup item inv)
+    hasAmount i inv = sum [amt | (itm,amt) <- inv, itm == i]
 
     -- Calculates total number of items someone has
     hasTotal :: Inventory -> Amount
@@ -153,7 +158,7 @@ solve (Problem question events) = ask question $ run events
 
     -- Finds the Owner given a name
     findOwner :: Name -> State -> Owner
-    findOwner n state
+    findOwner n state 
         | null owner  = NoOne
         | otherwise   = head owner
         where owner = dropWhile (\o -> name o /= n) state
@@ -175,6 +180,20 @@ eval state (Event owner (TakeFrom amount item target)) = takeFrom owner item amo
 {--------------------------------------------------------------------------------------------------}
 {---                                        TEST STATES                                         ---}
 {--------------------------------------------------------------------------------------------------}
+-- Tom has five red fish and six blue fish.
+tom :: Owner
+tom = (Owner (Name Nothing "Tom")
+             [(Item (Just "red") "fish" Nothing Nothing, 5),
+              (Item (Just "blue") "fish" Nothing Nothing, 6)])
+
+state1 :: State
+state1 = [tom]
+
+-- How many fish does Tom have?
+hasFish = hasAmount (Item Nothing "fish" Nothing Nothing) (inventory tom)
+  where
+    hasAmount i inv = sum [amt | (itm,amt) <- inv, itm == i]
+
 {-
 state1 = [Owner "Tom" [("apples",5), ("bananas",10)]]
 state2 = [Owner "Jane" [("apples",10)], Owner "Tom" [("apples",5),("bananas",10)]]
