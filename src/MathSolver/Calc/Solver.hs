@@ -19,6 +19,11 @@ items = map fst
 {---                                        ADJUST STATE                                        ---}
 {--------------------------------------------------------------------------------------------------}
 
+{-
+ -  All adjustments to state move the most recently used item and inventory to the front for the
+ -  next comparison
+ -}
+
 setItem :: Item -> Amount -> Inventory -> Inventory
 setItem item amount inv
     | amount == 0 && hasItem  = is ++ js
@@ -94,12 +99,16 @@ solve (Problem question events) = ask question $ run events
     ask (Question (Quantity (They t)) vb item) state = Answer (Quantity (They t)) vb result item
         where result = sum $ map (hasAmount item . inventory) state
 
+    ask (Question (Quantity he@He{}) vb item) state = Answer (Quantity he) vb result item
+        where
+            result = finalQuantity (ref he) item state
+
     ask (Question (Quantity subject) vb item) state = Answer (Quantity subject) vb result item
         where result = finalQuantity subject item state
 
     ask (Question (Gain subject) vb item) state
         | gainer == NoOne  = Answer (Gain subject) vb 0 item
-        | otherwise       = Answer (Gain subject) vb gain item
+        | otherwise        = Answer (Gain subject) vb gain item
         where
             gainer = findOwner subject state
             gain = finalAmount - initialAmount initialEvent
@@ -158,7 +167,7 @@ solve (Problem question events) = ask question $ run events
 
     -- Finds the Owner given a name
     findOwner :: Name -> State -> Owner
-    findOwner n state 
+    findOwner n state
         | null owner  = NoOne
         | otherwise   = head owner
         where owner = dropWhile (\o -> name o /= n) state

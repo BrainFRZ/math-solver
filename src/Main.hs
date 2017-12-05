@@ -24,7 +24,7 @@ menuOpts = M.fromList [("WFI", wordFromInt), ("TP", tagProblem), ("PP", parsePro
         ("SP", solveProblem)]
 
 main :: IO ()
-main = do 
+main = do
     putStrLn "Loading Brown's Corpus..."
     tagger <- brownTagger
     menu tagger
@@ -47,11 +47,11 @@ execute fun = fun
 solveProblem :: POSTagger B.Tag -> IO ()
 solveProblem tgr = do
     putStr "Enter a problem: "
-    problem <- getLine
-    let p   = preproc $ tag tgr problem
-    let q   = postprocQst $ head $ rights [parse questionCh "Main.hs, line 51" (getQst p)]
-    let evs = postprocEvs $ rights (map (parse eventCh "Main.hs, line 52") (getEvs p))
-    putStrLn $ writeAnswer $ solve (getProblem q evs)
+    prob <- getLine
+    let p   = preproc $ tag tgr prob
+    let q   = head $ rights [parse questionCh "Main.hs, line 52" (getQst p)]
+    let evs = rights (map (parse eventCh "Main.hs, line 53") (getEvs p))
+    putStrLn $ writeAnswer $ solve (getProblem $ postproc (q, evs))
     menu tgr
 
 
@@ -74,7 +74,6 @@ parseProblem tgr = do
     problem <- getLine
     let p = tag tgr problem
     putStr "Question: "
-    mapM_ print $ rights [parse questionCh "Main.hs, line 76" (getQst p)]
+    mapM_ print $ rights [parse questionCh "Main.hs, line 77" (getQst p)]
     putStrLn "Events:"
-    mapM_ print $ rights (map (parse eventCh "Main.hs, line 78") (getEvs p))
-
+    mapM_ print $ rights (map (parse eventCh "Main.hs, line 79") (getEvs p))

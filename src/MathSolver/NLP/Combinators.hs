@@ -10,7 +10,7 @@ import qualified Data.Text as T
 
 import Text.Parsec (unexpected, eof)
 import qualified Text.Parsec.Combinator as PC
-import Text.Parsec.Prim (lookAhead, (<|>), try, token )
+import Text.Parsec.Prim (lookAhead, (<|>), try, token)
 import Text.Read (readEither)
 
 import qualified NLP.Corpora.Brown as B
@@ -25,7 +25,9 @@ import MathSolver.NLP.WordNum
 data C_Owner    = C_Owner   { subjTitle  :: Maybe (POS B.Tag)       -- Owner Title
                             , fromSubj   :: POS B.Tag           }   -- Owner Name
         deriving (Show, Eq)
-newtype C_Subj  = C_Subj    { subjToOwner :: C_Owner            }
+data C_Subj     = C_Subj    { subjToOwner :: C_Owner            }
+                | C_He      { fromHe     :: POS B.Tag               -- Pronoun, only for C_Subj
+                            , refOwner   :: C_Owner             }   -- Owner that is being referred to
         deriving (Show, Eq)
 data C_Subj2    = C_Subj2   { subj1      :: C_Owner                 -- First subject
                             , subj2      :: C_Owner                 -- Second subject
@@ -48,16 +50,16 @@ data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary o
                             , objAdj2    :: Maybe (POS B.Tag)       -- Secondary obj
                             , objObj2    :: Maybe (POS B.Tag)   }   -- Secondary obj's adjective
         deriving (Show, Eq)
-data ObjOrMore  = Obj { fromObj :: POS B.Tag }
-                | More { fromMore :: (POS B.Tag) }
+data ObjOrMore  = Obj  { fromObj  :: POS B.Tag }
+                | More { fromMore :: POS B.Tag }
         deriving (Show, Eq)
 
 isObj :: ObjOrMore -> Bool
-isObj (Obj _) = True
+isObj Obj{} = True
 isObj _ = False
 
 isMore :: ObjOrMore -> Bool
-isMore (More _) = True
+isMore More{} = True
 isMore _ = False
 
 
@@ -75,12 +77,12 @@ data C_ActP     = C_AP_Set  { actVerb :: C_Verb                     -- Verb to s
 
                 | C_AP_Give { actVerb :: C_Verb                     -- Verb to give
                             , actQty  :: C_Qty                      -- Number of items
-                            , actObj  :: Maybe C_Obj                -- Item or 
+                            , actObj  :: Maybe C_Obj                -- Item or
                             , target  :: C_Targ }                   -- Direction of change
 
                 | C_AP_Take { actVerb :: C_Verb                     -- Verb to give
                             , actQty  :: C_Qty                      -- Number of items
-                            , actObj  :: Maybe C_Obj                -- Item or 
+                            , actObj  :: Maybe C_Obj                -- Item or
                             , target  :: C_Targ                 }   -- Direction of change
         deriving (Show, Eq)
 
@@ -174,7 +176,7 @@ isVing = do
 
 -- parse singleV "gets" $ head $ tag tgr "walked five miles"
 singleV :: Extractor B.Tag C_Verb
-singleV = do 
+singleV = do
     v <- (try (posTok B.VBD)    -- verb, past tense
       <|> try (posTok B.VBZ)    -- verb, present tense
       <|> try (posTok B.VBN)    -- verb, past participle
@@ -185,7 +187,7 @@ singleV = do
 -- deal with verbs. For example, "grabs" gets tagged as a plural noun. I'll add them here to be
 -- checked as a failsafe as I run across them.
 brokenVerbs :: Extractor B.Tag (POS B.Tag)
-brokenVerbs = oneOf Sensitive (map Token ["grabs", "books", "run"])
+brokenVerbs = oneOf Sensitive (map Token ["grabs", "books", "run", "read"])
 
 -- Any verb form as a convenience function. Using this doesn't give you any semantic hints
 verb :: Extractor B.Tag C_Verb
@@ -209,10 +211,15 @@ presentVerb = do
 -- The subject always comes immediately before a verb in a word problem. These also include
 -- nominal pronouns (he, they, etc).
 subjName :: Extractor B.Tag C_Subj
-subjName = do
+subjName = try he <|> do
     s <- subj
     lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> try (posPrefix "R") <|> brokenVerbs)
     return (C_Subj s)
+
+he :: Extractor B.Tag C_Subj
+he = do
+    n <- posTok B.PPS
+    return (C_He n (C_Owner Nothing n))
 
 subj :: Extractor B.Tag C_Owner
 subj = do
@@ -224,6 +231,7 @@ subj = do
     return (C_Owner t n)
     where
         titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
+
 
 subjAndSubj :: Extractor B.Tag C_Subj2
 subjAndSubj = do
@@ -271,10 +279,10 @@ number = do
 object :: Extractor B.Tag C_Obj
 object = do
     _ <- PC.optionMaybe (PC.many1 (try (posTok B.DT)    -- determinant  ex: "another"
-                                   <|> (posTok B.AP)))  -- determiner ex: "several", "several more"
+                                   <|>  posTok B.AP))   -- determiner ex: "several", "several more"
     a <- PC.optionMaybe (posTok B.JJ)                   -- adjective (non-comparative/superlative)
     n <- (try (posTok B.NN) <|> try (posTok B.NNS)      -- noun(s)
-          <|> posTok B.PPO)                             -- pronoun; eg "them"
+          <|>  posTok B.PPO)                            -- pronoun; eg "them"
     _ <- PC.optionMaybe prepNotTransfer                 -- preposition, restrict "to"/"from"
     _ <- PC.optionMaybe (posTok B.AT)                   -- article
     b <- PC.optionMaybe (posTok B.JJ)
@@ -320,8 +328,10 @@ setAP = do
 
 
 -- Parses on events that involve addition and subtraction.
+-- >>> parse changeAP "ghci" $ head $ tag tgr "then got four more."
 changeAP :: Extractor B.Tag C_ActP
 changeAP = do
+    _   <- PC.optionMaybe adverb
     v   <- verb
     _   <- PC.optionMaybe adverb
     _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
@@ -382,6 +392,7 @@ takeAP = do
 eventCh :: Extractor B.Tag C_EvtP
 eventCh = do
     s <- subjName
+    _   <- PC.optionMaybe adverb
     a <- try setAP <|> try takeAP <|> try giveAP <|> changeAP
     return (C_EvtP s a)
 
@@ -422,7 +433,7 @@ inTotal = do
 
 modQtyQst :: Extractor B.Tag C_Qst
 modQtyQst = do
-    _ <- txtTok Insensitive (Token "How")
+    _ <- txtTok Sensitive (Token "How")
     a <- adverb
     m <- posTok B.MD
     s <- try (posTok B.PPS) <|> try (posTok B.NP)
