@@ -6,7 +6,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Maybe (Maybe(..), fromJust, fromMaybe)
 import qualified Data.Set as S
-import NLP.Stemmer (stem, Stemmer(English) )
+import NLP.Stemmer (Stemmer(English), stem)
 
 
 data QuestionType = Quantity { subject :: Name }    -- How many does X have?

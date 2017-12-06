@@ -3,6 +3,7 @@
 module MathSolver.NLP.Parser ( getProblem, preproc, postproc, writeAnswer
                              , getQst, getEvs ) where
 
+import Data.Bool (bool)
 import qualified Data.Map.Strict as M
 import Data.Char (toUpper)
 import Data.Text (Text)
@@ -11,6 +12,7 @@ import Data.Maybe (fromMaybe, isNothing, fromJust)
 import qualified NLP.Corpora.Brown as B
 import NLP.Types
 import NLP.Types.Tree (ChunkOr(..), POS(..), showPOStok)
+import NLP.Stemmer (Stemmer(English), stem)
 import MathSolver.Types
 import MathSolver.Calc.Solver
 import MathSolver.NLP.WordNum
@@ -25,7 +27,6 @@ import MathSolver.NLP.Combinators
 Todo:
     Convert "If <event>, <question>" --> <event> <question>
     Convert separate conjunctive sentences into distinct events
-    Replace verb in question with similar verb in an event with same subject if it exists. "have" -> "has"
 -}
 
 -- Pre-Processing resolves various issues after tagging but before parsing
@@ -39,10 +40,10 @@ preproc = id
 
 -- Post-processing resolves various issues after parsing but before solving.
 postproc :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
-postproc = postprocQst . resolveQstPronoun . postprocEvs
+postproc = postprocQst . postprocEvs
 
 postprocQst :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
-postprocQst = id
+postprocQst = tryVerbFix . resolveQstPronoun
 
 postprocEvs :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
 postprocEvs = resolveImpliedObjs . resolveTargPronouns . resolveEvtPronouns
@@ -67,6 +68,44 @@ isName _        = False
 
 owners :: [C_EvtP] -> [C_Subj]
 owners = map probSubjCh
+
+-- Several verb conjugations change from how they are in the question to how they should be in an
+-- answer. This function attempts to fix this invisibly by looking for similar verbs with the same
+-- subject as the question. If none are found, the verb is left as-is. This won't work for cases
+-- where the verb in the question has spelling totally different than any in the event list, or if
+-- the verb hasn't been used in the event list. Since the solver works on the question type, the
+-- words can be changed without any effect on computation.
+tryVerbFix :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
+tryVerbFix (q, evs) = (fixVerb q, evs)
+  where
+    fixVerb :: C_Qst -> C_Qst
+    fixVerb qst@C_Qst_Qty{qstVerb=v} = qst{qstVerb=(tryUsedVerbOrHas v)}
+    fixVerb qst@C_Qst_Tot{qstVerb=v} = qst{qstVerb=(tryUsedVerbOrHas v)}
+    fixVerb qst = qst
+
+    -- Have and has won't stem to "ha", so they are checked manually because of how common they are
+    tryUsedVerbOrHas :: C_Verb -> C_Verb
+    tryUsedVerbOrHas v
+        | getVerb v == "have"  = C_Verb (POS B.HVZ "has")
+        | otherwise            = grabVerb v evs
+
+    getVerb :: C_Verb -> Text
+    getVerb v = (\(Token t) -> t) $ posToken $ fromVerb v
+
+    evtVerb :: C_EvtP -> C_Verb
+    evtVerb C_EvtP{fromActCh=act} = actVerb act
+
+    grabVerb :: C_Verb -> [C_EvtP] -> C_Verb
+    grabVerb v [] = v
+    grabVerb v (e:es) = bool tryLaterVerb thisVerb (isSimilarVerb (getVerb thisVerb) (getVerb v))
+      where
+        thisVerb     = evtVerb e
+        tryLaterVerb = grabVerb v es
+
+        isSimilarVerb :: Text -> Text -> Bool
+        isSimilarVerb v1 v2 = stem English (T.unpack v1) == stem English (T.unpack v2)
+--        | stem (getVerb $ evtVerb e) == stem (getVerb v)  = evtVerb e
+--        | otherwise                                       = grabVerb v es
 
 subjTxt :: C_Subj -> Text
 subjTxt = (\(Token t) -> t) . posToken . fromSubj . subjToOwner
