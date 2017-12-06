@@ -54,12 +54,12 @@ data ObjOrMore  = Obj  { fromObj  :: POS B.Tag }
                 | More { fromMore :: POS B.Tag }
         deriving (Show, Eq)
 
-isObj :: ObjOrMore -> Bool
-isObj Obj{} = True
+isObj :: C_Obj -> Bool
+isObj C_Obj{objItem=Obj{}} = True
 isObj _ = False
 
-isMore :: ObjOrMore -> Bool
-isMore More{} = True
+isMore :: C_Obj -> Bool
+isMore C_Obj{objItem=More{}} = True
 isMore _ = False
 
 

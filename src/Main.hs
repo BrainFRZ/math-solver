@@ -27,18 +27,26 @@ main :: IO ()
 main = do
     putStrLn "Loading Brown's Corpus..."
     tagger <- brownTagger
+    displayMenu
     menu tagger
+
+displayMenu :: IO ()
+displayMenu = do
+    putStrLn "Please choose from the following options"
+    putStrLn "    WFI: Word from Int"
+    putStrLn "    TP:  Tag Problem"
+    putStrLn "    PP:  Parse Problem"
+    putStrLn "    SP:  Solve Problem"
 
 menu :: POSTagger B.Tag -> IO ()
 menu tgr = do
-    putStrLn $ T.unwords $ M.keys menuOpts
     putStr "Enter an option: "
     opt <- getLine
     case M.lookup opt menuOpts of
         Just o  ->  execute o tgr >> menu tgr
         Nothing ->  if opt `elem` ["quit", "exit"]
                         then return ()
-                        else putStrLn "Not an option" >> menu tgr
+                        else putStrLn "Not an option" >> displayMenu >> menu tgr
 
 execute :: (POSTagger B.Tag -> IO ()) -> POSTagger B.Tag -> IO ()
 execute fun = fun

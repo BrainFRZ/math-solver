@@ -7,7 +7,7 @@ import qualified Data.Map.Strict as M
 import Data.Char (toUpper)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing, fromJust)
 import qualified NLP.Corpora.Brown as B
 import NLP.Types
 import NLP.Types.Tree (ChunkOr(..), POS(..), showPOStok)
@@ -25,6 +25,7 @@ import MathSolver.NLP.Combinators
 Todo:
     Convert "If <event>, <question>" --> <event> <question>
     Convert separate conjunctive sentences into distinct events
+    Replace verb in question with similar verb in an event with same subject if it exists. "have" -> "has"
 -}
 
 -- Pre-Processing resolves various issues after tagging but before parsing
@@ -44,7 +45,7 @@ postprocQst :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
 postprocQst = id
 
 postprocEvs :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
-postprocEvs = resolveEvtPronouns
+postprocEvs = resolveImpliedObjs . resolveEvtPronouns
 
 
 -- Changes C_He's reference to the last resolved owner in the event list.
@@ -67,9 +68,6 @@ isName _        = False
 owners :: [C_EvtP] -> [C_Subj]
 owners = map probSubjCh
 
---subjPos :: C_Subj -> B.Tag
---subjPos = posTag . fromSubj . subjToOwner
-
 subjTxt :: C_Subj -> Text
 subjTxt = (\(Token t) -> t) . posToken . fromSubj . subjToOwner
 
@@ -77,19 +75,44 @@ subjTxt = (\(Token t) -> t) . posToken . fromSubj . subjToOwner
 -- pronoun subject, it gets carried
 resolveEvtPronouns :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
 resolveEvtPronouns (q, evs) = (q, carryLatestOwner (evSubj $ head evs) evs)
-    where
-        -- Carries the most recent owner over every pronoun subject in an event list
-        carryLatestOwner :: C_Owner -> [C_EvtP] -> [C_EvtP]
-        carryLatestOwner _ [] = []
+  where
+    -- Carries the most recent owner over every pronoun subject in an event list
+    carryLatestOwner :: C_Owner -> [C_EvtP] -> [C_EvtP]
+    carryLatestOwner _ [] = []
 
-        carryLatestOwner subj (e@C_EvtP{probSubjCh=he@C_He{}} : es)
-                = e{probSubjCh = he{refOwner = subj}} : carryLatestOwner subj es
+    carryLatestOwner subj (e@C_EvtP{probSubjCh=he@C_He{}} : es)
+            = e{probSubjCh = he{refOwner = subj}} : carryLatestOwner subj es
 
-        carryLatestOwner _ (e@C_EvtP{probSubjCh=C_Subj{}} : es)
-                = e : carryLatestOwner (evSubj e) es
+    carryLatestOwner _ (e@C_EvtP{probSubjCh=C_Subj{}} : es)
+            = e : carryLatestOwner (evSubj e) es
 
-        evSubj :: C_EvtP -> C_Owner
-        evSubj = subjToOwner . probSubjCh
+    evSubj :: C_EvtP -> C_Owner
+    evSubj = subjToOwner . probSubjCh
+
+
+-- Resolves implied objects in events. For example, "John has five books. He gets two more." In this
+-- case, the event is implying "more books". The resolver will always use the last explicit object.
+resolveImpliedObjs :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
+resolveImpliedObjs (q, evs) = (q, carryLatestObj (evObj $ head evs) evs)
+  where
+    carryLatestObj :: Maybe C_Obj -> [C_EvtP] -> [C_EvtP]
+    carryLatestObj _ [] = []
+
+    carryLatestObj obj (e : es)
+        | objImplied e  = applyObj e : carryLatestObj obj es
+        | otherwise     = e : carryLatestObj (evObj e) es
+        where
+            applyObj :: C_EvtP -> C_EvtP
+            applyObj e@C_EvtP{fromActCh=act@C_AP_Set{}}  = e{fromActCh=act{actObj=obj}}
+            applyObj e@C_EvtP{fromActCh=act@C_AP_Chg{}}  = e{fromActCh=act{actObj=obj}}
+            applyObj e@C_EvtP{fromActCh=act@C_AP_Give{}} = e{fromActCh=act{actObj=obj}}
+            applyObj e@C_EvtP{fromActCh=act@C_AP_Take{}} = e{fromActCh=act{actObj=obj}}
+
+    evObj :: C_EvtP -> Maybe C_Obj
+    evObj = actObj . fromActCh
+
+    objImplied :: C_EvtP -> Bool
+    objImplied ev = isNothing (evObj ev) || isMore (fromJust $ evObj ev)
 
 {--------------------------------------------------------------------------------------------------}
 {---                                       Problem Parser                                       ---}
@@ -141,9 +164,9 @@ getAmount :: C_Qty -> Amount
 getAmount q = wordToNum $ T.unwords $ map showPOStok (fromQty q)
 
 getItem :: C_Obj -> Item
-getItem (C_Obj adj1 item adj2 obj)
-    | isMore item  = Item (fmt adj1) "more" (fmt adj2) (fmt obj)
-    | otherwise    = Item (fmt adj1) (showPOStok $ fromObj item) (fmt adj2) (fmt obj)
+getItem o@(C_Obj adj1 item adj2 obj)
+    | isMore o   = Item (fmt adj1) "more" (fmt adj2) (fmt obj)
+    | otherwise  = Item (fmt adj1) (showPOStok $ fromObj item) (fmt adj2) (fmt obj)
     where
         fmt = fromMaybeTag
 
