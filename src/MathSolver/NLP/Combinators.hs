@@ -78,12 +78,12 @@ data C_ActP     = C_AP_Set  { actVerb :: C_Verb                     -- Verb to s
                 | C_AP_Give { actVerb :: C_Verb                     -- Verb to give
                             , actQty  :: C_Qty                      -- Number of items
                             , actObj  :: Maybe C_Obj                -- Item or
-                            , target  :: C_Targ }                   -- Direction of change
+                            , target  :: C_Targ }                   -- Owner receiving obj
 
                 | C_AP_Take { actVerb :: C_Verb                     -- Verb to give
                             , actQty  :: C_Qty                      -- Number of items
                             , actObj  :: Maybe C_Obj                -- Item or
-                            , target  :: C_Targ                 }   -- Direction of change
+                            , target  :: C_Targ                 }   -- Owner receiving obj
         deriving (Show, Eq)
 
 data C_EvtP     = C_EvtP    { probSubjCh :: C_Subj                  -- Event Subject's name

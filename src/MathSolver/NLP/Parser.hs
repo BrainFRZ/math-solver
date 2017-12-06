@@ -45,7 +45,7 @@ postprocQst :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
 postprocQst = id
 
 postprocEvs :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
-postprocEvs = resolveImpliedObjs . resolveEvtPronouns
+postprocEvs = resolveImpliedObjs . resolveTargPronouns . resolveEvtPronouns
 
 
 -- Changes C_He's reference to the last resolved owner in the event list.
@@ -71,6 +71,9 @@ owners = map probSubjCh
 subjTxt :: C_Subj -> Text
 subjTxt = (\(Token t) -> t) . posToken . fromSubj . subjToOwner
 
+evSubj :: C_EvtP -> C_Owner
+evSubj = subjToOwner . probSubjCh
+
 -- Pronouns are resolved by using the most recent non-pronoun owner. If the first event uses a
 -- pronoun subject, it gets carried
 resolveEvtPronouns :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
@@ -86,9 +89,36 @@ resolveEvtPronouns (q, evs) = (q, carryLatestOwner (evSubj $ head evs) evs)
     carryLatestOwner _ (e@C_EvtP{probSubjCh=C_Subj{}} : es)
             = e : carryLatestOwner (evSubj e) es
 
-    evSubj :: C_EvtP -> C_Owner
-    evSubj = subjToOwner . probSubjCh
+-- Pronouns are resolved by using the most recent non-pronoun owner. If the first event uses a
+-- pronoun subject, it gets carried. This should be used after subject pronouns have been resolved
+-- to avoid propogating unresolved pronouns.
+resolveTargPronouns :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
+resolveTargPronouns (q, evs) = (q, targetLatestSubj (evSubj $ head evs) evs)
+  where
+    -- Carries the most recent owner over every pronoun target in an event list
+    targetLatestSubj :: C_Owner -> [C_EvtP] -> [C_EvtP]
+    targetLatestSubj _ [] = []
 
+    targetLatestSubj lastSubj (e : es)
+        | targImplied (evTarg e)  = applyTarg e : targetLatestSubj (evSubj e) es
+        | otherwise               = e : targetLatestSubj (evSubj e) es
+        where
+            applyTarg :: C_EvtP -> C_EvtP
+            applyTarg e@C_EvtP{fromActCh=act@C_AP_Give{}} = e{fromActCh=act{target=(toTarg lastSubj)}}
+            applyTarg e@C_EvtP{fromActCh=act@C_AP_Take{}} = e{fromActCh=act{target=(toTarg lastSubj)}}
+            applyTarg e = e
+
+            toTarg :: C_Owner -> C_Targ
+            toTarg (C_Owner title subj) = C_Targ title subj
+
+    evTarg :: C_EvtP -> Maybe C_Targ
+    evTarg C_EvtP{fromActCh=act@C_AP_Give{}} = Just (target act)
+    evTarg C_EvtP{fromActCh=act@C_AP_Take{}} = Just (target act)
+    evTarg _ = Nothing
+
+    targImplied :: Maybe C_Targ -> Bool
+    targImplied (Just t) = (posTag $ fromTarg t) `elem` [B.PPS, B.PPSS, B.PPO, B.PPdollar]
+    targImplied Nothing = True
 
 -- Resolves implied objects in events. For example, "John has five books. He gets two more." In this
 -- case, the event is implying "more books". The resolver will always use the last explicit object.

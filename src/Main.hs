@@ -21,7 +21,7 @@ import MathSolver.Calc.Solver
 
 menuOpts :: M.Map Text (POSTagger B.Tag -> IO ())
 menuOpts = M.fromList [("WFI", wordFromInt), ("TP", tagProblem), ("PP", parseProblem),
-        ("SP", solveProblem)]
+        ("PPP", procProb), ("SP", solveProblem)]
 
 main :: IO ()
 main = do
@@ -36,6 +36,7 @@ displayMenu = do
     putStrLn "    WFI: Word from Int"
     putStrLn "    TP:  Tag Problem"
     putStrLn "    PP:  Parse Problem"
+    putStrLn "    PPP: Process Problem"
     putStrLn "    SP:  Solve Problem"
 
 menu :: POSTagger B.Tag -> IO ()
@@ -85,3 +86,16 @@ parseProblem tgr = do
     mapM_ print $ rights [parse questionCh "Main.hs, line 77" (getQst p)]
     putStrLn "Events:"
     mapM_ print $ rights (map (parse eventCh "Main.hs, line 79") (getEvs p))
+
+procProb :: POSTagger B.Tag -> IO ()
+procProb tgr = do
+    putStr "Enter a problem: "
+    prob <- getLine
+    let p   = preproc $ tag tgr prob
+    let q   = head $ rights [parse questionCh "Main.hs, line 52" (getQst p)]
+    let evs = rights (map (parse eventCh "Main.hs, line 53") (getEvs p))
+    let (pq, pevs) = postproc (q, evs)
+    putStr "Question: "
+    print pq
+    putStrLn "Events:"
+    mapM_ print pevs
