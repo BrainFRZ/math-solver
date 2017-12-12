@@ -405,7 +405,9 @@ takeAP = do
     return (C_AP_Take v n o t)
 
 eventCh :: Extractor B.Tag C_EvtP
-eventCh = try qtyChgAct <|> subjAct
+eventCh = do 
+    _ <- PC.optionMaybe (try (posTok B.RB) <|> posTok B.RBR)   -- Skip adverbs like "Then"
+    try qtyChgAct <|> subjAct
 
 subjAct :: Extractor B.Tag C_EvtP
 subjAct = do
