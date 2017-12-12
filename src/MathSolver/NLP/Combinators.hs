@@ -233,6 +233,10 @@ he = do
     n <- posTok B.PPS
     return (C_He n (C_Owner Nothing n))
 
+-- Titles of subjects. These titles frequently confuse the tagger, so should be checked explicitly
+titles :: [Text]
+titles = T.words "Mrs Missus Ms Miz Mr Mister Dr Doctor Doc"
+
 subj :: Extractor B.Tag C_Owner
 subj = do
     t <- PC.optionMaybe (try (oneOf Sensitive (map Token titles)) <|> posTok B.NN)
@@ -242,8 +246,6 @@ subj = do
      <|> try (posTok B.NNS)                             -- Plural Noun
           <|> posTok B.PPO                              -- Pers Acc Pronoun; "Wrong" but still used
     return (C_Owner t n)
-    where
-        titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
 
 
 subjAndSubj :: Extractor B.Tag C_Subj2
@@ -263,8 +265,6 @@ targName = do
     n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> try (posTok B.PPSS) <|> try (posTok B.PPO)
           <|> posTok B.PPdollar
     return (C_Targ t n)
-    where
-        titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
 
 {--------------------------------------------------------------------------------------------------}
 {---                                       ACTION CHUNKS                                        ---}
@@ -349,6 +349,7 @@ changeAP = do
     _   <- PC.optionMaybe adverb
     v   <- verb
     _   <- PC.optionMaybe adverb
+    _   <- PC.optionMaybe (posTok B.IN)
     _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
     n   <- number
     dir <- PC.optionMaybe changeCh      -- "more", "fewer", etc
@@ -412,7 +413,7 @@ eventCh = do
 subjAct :: Extractor B.Tag C_EvtP
 subjAct = do
     s <- subjName
-    _   <- PC.optionMaybe adverb
+    _ <- PC.optionMaybe adverb
     a <- try setAP <|> try takeAP <|> try giveAP <|> changeAP
     return (C_EvtP s a)
 
@@ -426,7 +427,8 @@ qtyChgAct = do
     s   <- subjName
     _   <- PC.optionMaybe adverb
     v   <- verb
-    _   <- PC.optionMaybe (try adverb <|> posTok B.IN)
+    _   <- PC.optionMaybe adverb
+    _   <- PC.optionMaybe (posTok B.IN)
     _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
     o   <- PC.optionMaybe object
     return (C_EvtP (objToSubj o) (C_AP_Chg v n dir (Just $ subjToObj s)))
