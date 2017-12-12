@@ -114,9 +114,9 @@ groupToWord n = T.unwords $ numWords n
 wordToNum :: (Integral a, Read a) => Text -> a
 wordToNum s
     | T.null s    = 0
-    | isNegative  = (-1) * wordToNum (T.unwords $ tail (T.words s))
+    | isNegative  = (-1) * wordToNum (T.unwords $ tail (T.words $ T.toLower s))
     | isDigitStr  = read $ T.unpack cleanedNum
-    | otherwise   = fromGroups $ splitGroups s
+    | otherwise   = fromGroups $ splitGroups $ T.toLower s
     where
         isNegative = head (T.words s) `elem` ["negative", "minus"]
         isDigitStr = T.all isDigit cleanedNum

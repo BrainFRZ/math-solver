@@ -1,14 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module MathSolver.NLP.Parser ( getProblem, preproc, postproc, writeAnswer
-                             , getQst, getEvs ) where
+module MathSolver.NLP.Parser (getProblem, preproc, postproc, writeAnswer, getQst, getEvs) where
 
 import Data.Bool (bool)
 import qualified Data.Map.Strict as M
 import Data.Char (toUpper)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Maybe (fromMaybe, isNothing, fromJust)
+import Data.Maybe (fromMaybe, isNothing, isJust, fromJust)
 import qualified NLP.Corpora.Brown as B
 import NLP.Types
 import NLP.Types.Tree (ChunkOr(..), POS(..), showPOStok)
@@ -79,18 +78,21 @@ tryVerbFix :: (C_Qst, [C_EvtP]) -> (C_Qst, [C_EvtP])
 tryVerbFix (q, evs) = (fixVerb q, evs)
   where
     fixVerb :: C_Qst -> C_Qst
-    fixVerb qst@C_Qst_Qty{qstVerb=v} = qst{qstVerb=(tryUsedVerbOrHas v)}
-    fixVerb qst@C_Qst_Tot{qstVerb=v} = qst{qstVerb=(tryUsedVerbOrHas v)}
+    fixVerb qst@C_Qst_Qty{qstVerb = v}  = qst{qstVerb = tryUsedVerbOrHas v}
+    fixVerb qst@C_Qst_Tot{qstVerb = v}  = qst{qstVerb = tryUsedVerbOrHas v}
     fixVerb qst = qst
 
     -- Have and has won't stem to "ha", so they are checked manually because of how common they are
     tryUsedVerbOrHas :: C_Verb -> C_Verb
     tryUsedVerbOrHas v
-        | getVerb v == "have"  = C_Verb (POS B.HVZ "has")
-        | otherwise            = grabVerb v evs
+        | getVerbPos v == B.HV   = C_Verb (POS B.HVZ "has")
+        | otherwise              = grabVerb v evs
 
     getVerb :: C_Verb -> Text
-    getVerb v = (\(Token t) -> t) $ posToken $ fromVerb v
+    getVerb v = showPOStok $ fromVerb v
+
+    getVerbPos :: C_Verb -> B.Tag
+    getVerbPos v = posTag $ fromVerb v
 
     evtVerb :: C_EvtP -> C_Verb
     evtVerb C_EvtP{fromActCh=act} = actVerb act
@@ -108,7 +110,7 @@ tryVerbFix (q, evs) = (fixVerb q, evs)
 --        | otherwise                                       = grabVerb v es
 
 subjTxt :: C_Subj -> Text
-subjTxt = (\(Token t) -> t) . posToken . fromSubj . subjToOwner
+subjTxt = showPOStok . fromSubj . subjToOwner
 
 evSubj :: C_EvtP -> C_Owner
 evSubj = subjToOwner . probSubjCh
@@ -213,7 +215,7 @@ evtToEvent :: C_EvtP -> Event
 evtToEvent (C_EvtP he@C_He{} a) = Event (He pronoun ref) (getAction a)
   where
     pronoun :: Text
-    pronoun = (\(Token t) -> t) $ posToken $ fromHe he
+    pronoun = showPOStok $ fromHe he
 
     ref :: Name
     ref = getOwner $ refOwner he
@@ -246,8 +248,10 @@ getItemMaybe (Just i) = getItem i
 
 
 getQuestion :: C_Qst -> Question
-getQuestion q@C_Qst_Mod{modQAdv=a, modQMod=m, modQSubj=s, modQVerb=v} =
-        Question (getQstType q) (getQstVerb q) (Item Nothing (showPOStok s) Nothing Nothing)
+getQuestion q@C_Qst_Mod{modQAdv=a, modQMod=m, modQSubj=s, modQVerb=v}
+    = Question (getQstType q) (getQstVerb q) (Item Nothing (showPOStok s) Nothing Nothing)
+getQuestion q@C_Qst_QtyIn{qstSubjIn = s, qstVerb = v}
+    = Question (getQstType q) (getQstVerb q) (getItem s)
 getQuestion q = Question (getQstType q) (getQstVerb q) (getItem $ qstObj q)
 
 getQstVerb :: C_Qst -> Text
@@ -262,27 +266,47 @@ getUnresolvedHeName C_Subj{} = error "Parser.getUnresolvedHeName: Subject isn't 
 getUnresolvedHeName (C_He name ref) = He heName (getOwner ref)
   where
     heName :: Text
-    heName = (\(Token t) -> t) $ posToken name
+    heName = showPOStok name
 
+-- Determines the question type being asked. If it's asking quantity and the verb is negative, the
+-- question is interpreted as a Loss question.
 getQstType :: C_Qst -> QuestionType
-getQstType C_Qst_Qty{qstSubj = Nothing}         = Quantity Someone
-getQstType C_Qst_Qty{qstSubj = Just he@C_He{}}  = Quantity (getUnresolvedHeName he)
-getQstType C_Qst_Qty{qstSubj = Just s}          = Quantity (getOwner $ subjToOwner s)
+getQstType C_Qst_Qty{qstSubj = Nothing, qstVerb = v}
+    | M.member (showPOStok $ fromVerb v) remList  = Loss Someone
+    | otherwise                                   = Quantity Someone
 
-getQstType C_Qst_Tot{qstSubj = Nothing}         = Total Someone
-getQstType C_Qst_Tot{qstSubj = Just he@C_He{}}  = Total (getUnresolvedHeName he)
-getQstType C_Qst_Tot{qstSubj = Just s}          = Total (getOwner $ subjToOwner s)
+getQstType C_Qst_Qty{qstSubj = Just he@C_He{}, qstVerb = v}
+    | M.member (showPOStok $ fromVerb v) remList  = Loss (getUnresolvedHeName he)
+    | otherwise                                   = Quantity (getUnresolvedHeName he)
 
-getQstType C_Qst_CA{}                           = CombineAll
+getQstType C_Qst_Qty{qstSubj = Just s, qstVerb = v}
+    | M.member (showPOStok $ fromVerb v) remList  = Loss (getOwner $ subjToOwner s)
+    | otherwise                                   = Quantity (getOwner $ subjToOwner s)
 
-getQstType C_Qst_Mod{modQSubj = s}  = Quantity (Name Nothing (showPOStok s))  -- Modal qst type
+getQstType C_Qst_QtyIn{qstWhere = Nothing, qstPrep = p} = QuantityIn Someone (getPrep p)
+getQstType C_Qst_QtyIn{qstWhere = Just w, qstPrep = p}  = QuantityIn (itemToName $ getItem w) (getPrep p)
 
-getQstType C_Qst_CB{qstSubjs=(C_They t _)}      = Quantity (They (showPOStok t))
-getQstType C_Qst_CB{qstSubjs=s}                 = Combine (getOwner s1) (getOwner s2)
+getQstType C_Qst_Tot{qstSubj = Nothing}           = Total Someone
+getQstType C_Qst_Tot{qstSubj = Just he@C_He{}}    = Total (getUnresolvedHeName he)
+getQstType C_Qst_Tot{qstSubj = Just s}            = Total (getOwner $ subjToOwner s)
+
+getQstType C_Qst_CA{}                             = CombineAll
+
+getQstType C_Qst_Mod{modQSubj = s, modQVerb = v}      -- Modal qst type
+    | M.member (showPOStok v) remList             = Loss (Name Nothing (showPOStok s))
+    | otherwise                                   = Quantity (Name Nothing (showPOStok s))
+
+getQstType C_Qst_CB{qstSubjs = (C_They t _), qstVerb = v}
+    | M.member (showPOStok $ fromVerb v) remList  = Loss (They (showPOStok t))
+    | otherwise                                   = Quantity (They (showPOStok t))
+
+getQstType C_Qst_CB{qstSubjs = s}                 = Combine (getOwner s1) (getOwner s2)
   where
     s1 = subj1 s
     s2 = subj2 s
 
+getPrep :: Maybe (POS B.Tag) -> Text
+getPrep p = bool T.empty (showPOStok $ fromJust p) (isJust p)
 
 -- Determines which Solver action the parsed action should map to. Currently the parsed action has
 -- far more information than is used, but this can be utilized for further certainty in
@@ -302,20 +326,21 @@ getChangeAction v q i = vbAction qty item
     verb = showPOStok $ fromVerb v
     qty = getAmount q
     item = getItemMaybe i
-    vbAction = fromMaybe Add (M.lookup verb changeActs)
+    vbAction = bool Add Remove (M.member verb remList)  -- Defaults to Add
 
 
 changeActs :: M.Map Text (Integer -> Item -> Action)
-changeActs = M.fromList (addList ++ remList)
-  where
-    addList :: [(Text, Integer -> Item -> Action)]
-    addList = map (\w -> (w, Add)) ["add","added","bought","buys","catches","caught","finds",
-        "found","gets","got","grabs","made","makes","picked","picks","played","plays","read",
-        "reads","takes","took"]
+changeActs = M.union addList remList
 
-    remList :: [(Text, Integer -> Item -> Action)]
-    remList = map (\w -> (w, Remove)) ["blew","blows","dropped","drops","dumped","dumps","eats",
-        "flew","flies","leaves","left","loses","lost","put","puts","remove","removes","removed"]
+addList :: M.Map Text (Integer -> Item -> Action)
+addList = M.fromAscList $ map (\w -> (w, Add)) ["add","added","bought","buy","buys","catch",
+    "catches","caught","find","finds","found","get","gets","got","grab","grabs","made","make",
+    "makes","pick","picked","picks","play","played","plays","read","reads","take","takes","took"]
+
+remList :: M.Map Text (Integer -> Item -> Action)
+remList = M.fromAscList $ map (\w -> (w, Remove)) ["ate", "blew","blow","blows","drop","dropped",
+    "drops","dump","dumped","dumps","eat","eats","leave","leaves","left","lose","loses","lost",
+    "put","puts","remove","removes","removed"]
 
 
 {--------------------------------------------------------------------------------------------------}
@@ -324,28 +349,28 @@ changeActs = M.fromList (addList ++ remList)
 
 -- Translates the Solver's answer output into plain English
 writeAnswer :: Answer -> Text
-writeAnswer a = T.pack $ answer (showAnswer a)
+writeAnswer a = T.pack $ answer $ unwords $ filter (not . null) (showAnswer a)
   where
     answer (c:cs) = toUpper c : cs
 
-showAnswer :: Answer -> String
-showAnswer Unsolvable = "There isn't enough information to answer this question. :("
-showAnswer (Answer (Quantity n) vb amt i) =
-    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
-showAnswer (Answer (Total n) vb amt i) =
-    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " " ++ writeItem i ++ " in total."
-showAnswer (Answer (Gain n) vb amt i) =
-    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " more " ++ writeItem i ++ "."
-showAnswer (Answer (Loss n) vb amt i) =
-    writeName n ++ " lost " ++ fromAmt amt ++ " " ++ writeItem i ++ "."
-showAnswer (Answer (Compare n targ) vb amt i) =
-    writeName n ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " more " ++ writeItem i ++ " than "
-    ++ writeName targ ++ "."
-showAnswer (Answer (Combine subj1 subj2) vb amt i) =
-    writeName subj1 ++ " and " ++ writeName subj2 ++ " " ++ writeVerb vb ++ " " ++ fromAmt amt ++ " "
-    ++ writeItem i ++ " combined."
-showAnswer (Answer CombineAll _ amt i) =
-    "There are " ++ fromAmt amt ++ " " ++ writeItem i ++ " altogether."
+showAnswer :: Answer -> [String]
+showAnswer Unsolvable = ["There isn't enough information to answer this question. :("]
+showAnswer (Answer (Quantity n) vb amt i)
+    = [writeName n, writeVerb vb, fromAmt amt, writeItem i ++ "."]
+showAnswer (Answer (QuantityIn n prep) vb amt i)
+    = [fromAmt amt, writeItem i, writeVerb vb, T.unpack prep, writeItem (nameToItem n) ++ "."]
+showAnswer (Answer (Total n) vb amt i)
+    = [writeName n, writeVerb vb, fromAmt amt, writeItem i, "in total."]
+showAnswer (Answer (Gain n) vb amt i)
+    = [writeName n, writeVerb vb, fromAmt amt, "more", writeItem i ++ "."]
+showAnswer (Answer (Loss n) vb amt i)
+    = [writeName n, writeVerb vb, fromAmt amt, writeItem i ++ "."]
+showAnswer (Answer (Compare n targ) vb amt i)
+    = [writeName n, writeVerb vb, fromAmt amt, "more", writeItem i, "than", writeName targ ++ "."]
+showAnswer (Answer (Combine subj1 subj2) vb amt i)
+    = [writeName subj1, "and", writeName subj2, writeVerb vb, fromAmt amt, writeItem i, "combined."]
+showAnswer (Answer CombineAll _ amt i)
+    = ["There are", fromAmt amt, writeItem i, "altogether."]
 
 -- Converts the solution quantity into a written number
 fromAmt :: Amount -> String

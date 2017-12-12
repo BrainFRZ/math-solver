@@ -9,14 +9,16 @@ import qualified Data.Set as S
 import NLP.Stemmer (Stemmer(English), stem)
 
 
-data QuestionType = Quantity { subject :: Name }    -- How many does X have?
-                  | Total    { subject :: Name }    -- How much does X have in total?
-                  | Gain     { subject :: Name }    -- How many has X gained?
-                  | Loss     { subject :: Name }    -- How many has X lost?
-                  | Compare  { subject :: Name      -- How many more does X have than Y?
-                             , against :: Name }
-                  | Combine Name Name               -- How many do X and Y have total?
-                  | CombineAll                      -- How many are there total?
+data QuestionType = Quantity   { subject :: Name }    -- How many does X have?
+                  | QuantityIn { subjIn  :: Name      -- How many X ...?
+                               , prep    :: Text }
+                  | Total      { subject :: Name }    -- How much does X have in total?
+                  | Gain       { subject :: Name }    -- How many has X gained?
+                  | Loss       { subject :: Name }    -- How many has X lost?
+                  | Compare    { subject :: Name      -- How many more does X have than Y?
+                               , against :: Name }
+                  | Combine Name Name                 -- How many do X and Y have total?
+                  | CombineAll                        -- How many are there total?
         deriving (Show, Eq)
 
 data Action = Set      { amount :: Integer          -- Sets an owner's capacity of an item
@@ -92,6 +94,13 @@ instance Eq Item where
     Item{} == Something                             = True
 
     Something == Item{}                             = True
+
+nameToItem :: Name -> Item
+nameToItem n = Item (title n) (getName n) Nothing Nothing
+
+itemToName :: Item -> Name
+itemToName i = Name (itemAdj i) (fromItem i)
+
 
 stemTxt :: Text -> Text
 stemTxt = T.pack . stem English . T.unpack

@@ -4,13 +4,15 @@ module MathSolver.NLP.Combinators where
 
 import Prelude hiding (compare)
 
+import Data.Char (isDigit)
+import Data.List (all)
 import Data.Maybe (isJust, fromJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 
 import Text.Parsec (unexpected, eof)
 import qualified Text.Parsec.Combinator as PC
-import Text.Parsec.Prim (lookAhead, (<|>), try, token)
+import Text.Parsec.Prim (lookAhead, (<|>), (<?>), try, token)
 import Text.Read (readEither)
 
 import qualified NLP.Corpora.Brown as B
@@ -45,7 +47,7 @@ newtype C_Qty   = C_Qty     { fromQty    :: [POS B.Tag]         }   -- Quantity
 newtype C_Change = C_Change { changeDir  :: POS B.Tag           }   -- Direction of change
         deriving (Show, Eq)
 
-data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary obj's actective
+data C_Obj      = C_Obj     { objAdj1    :: Maybe (POS B.Tag)       -- Primary obj's adjective
                             , objItem    :: ObjOrMore               -- Only/Primary Object
                             , objAdj2    :: Maybe (POS B.Tag)       -- Secondary obj
                             , objObj2    :: Maybe (POS B.Tag)   }   -- Secondary obj's adjective
@@ -95,6 +97,12 @@ data C_Qst      = C_Qst_Qty { qstObj    :: C_Obj                    -- Object as
                             , qstSubj   :: Maybe C_Subj             -- Subject of question
                             , qstVerb   :: C_Verb                   -- Verb for the question
                             , qstAdv    :: Maybe (POS B.Tag)    }   -- Adverb for when useful
+
+                -- Question asking about a quantity in/at a thing/place. Requires a subject
+                | C_Qst_QtyIn { qstSubjIn :: C_Obj                  -- Subject asked about
+                              , qstVerb   :: C_Verb                 -- Verb for the question
+                              , qstPrep   :: Maybe (POS B.Tag)      -- Preposition
+                              , qstWhere  :: Maybe C_Obj        }   -- Container/location
 
                 -- Question asking about a total quantity. These will scope out based on ambiguity
                 | C_Qst_Tot { qstObj    :: C_Obj                    -- Object asked about
@@ -223,11 +231,12 @@ he = do
 
 subj :: Extractor B.Tag C_Owner
 subj = do
-    t <- PC.optionMaybe (oneOf Sensitive (map Token titles)) <|> PC.optionMaybe (posTok B.NN)
+    t <- PC.optionMaybe (try (oneOf Sensitive (map Token titles)) <|> posTok B.NN)
     _ <- PC.optionMaybe (posTok B.Term)
-    n <- (try (posTok B.NP)                             -- Singular Proper Noun
-      <|> try (posTok B.PPS) <|> try (posTok B.PPSS)    -- Personal Nom Pronoun
-           <|> posTok B.PPO)                            -- Pers Acc Pronoun; "Wrong" but still used
+    n <- try (posTok B.NP)                              -- Singular Proper Noun
+     <|> try (posTok B.PPS) <|> try (posTok B.PPSS)     -- Personal Nom Pronoun
+     <|> try (posTok B.NNS)                             -- Plural Noun
+          <|> posTok B.PPO                              -- Pers Acc Pronoun; "Wrong" but still used
     return (C_Owner t n)
     where
         titles = ["Mrs", "Missus", "Ms", "Miz", "Mr", "Mister", "Dr", "Doctor", "Doc"]
@@ -245,7 +254,7 @@ subjAndSubj = do
 -- These don't include nominal pronouns, but do include accusative ones.
 targName :: Extractor B.Tag C_Targ
 targName = do
-    t <- PC.optionMaybe (oneOf Sensitive (map Token titles)) <|> PC.optionMaybe (posTok B.NN)
+    t <- PC.optionMaybe (try (oneOf Sensitive (map Token titles)) <|> posTok B.NN)
     d <- PC.optionMaybe (posTok B.Term)
     n <- try (posTok B.NP) <|> try (posTok B.PPS) <|> try (posTok B.PPSS) <|> try (posTok B.PPO)
           <|> posTok B.PPdollar
@@ -265,8 +274,9 @@ consumeRemainder :: Extractor B.Tag [POS B.Tag]
 consumeRemainder = PC.manyTill anyToken (posTok B.Term)
 
 -- Consumes a number. In some cases, problems will simple say "another" or "the", which would imply
--- a quantity of 1, so determinants are also allowed.
--- TODO: allow comma-separated blocks
+-- a quantity of 1, so determinants are also allowed. Also, since the tagger sometimes doesn't
+-- recognize numbers properly, a token is consumed if it's every word is a number word, as defined
+-- in MathSolver.NLP.WordNum.isNumWord. This also destroys comma separators if they exist.
 number :: Extractor B.Tag C_Qty
 number = do
     n <- PC.many1 (posTok B.CD)
@@ -280,13 +290,14 @@ object :: Extractor B.Tag C_Obj
 object = do
     _ <- PC.optionMaybe (PC.many1 (try (posTok B.DT)    -- determinant  ex: "another"
                                    <|>  posTok B.AP))   -- determiner ex: "several", "several more"
-    a <- PC.optionMaybe (posTok B.JJ)                   -- adjective (non-comparative/superlative)
+    a <- PC.optionMaybe (try (posTok B.AT)              -- article
+                         <|>  posTok B.JJ)              -- adjective (non-comparative/superlative)
     n <- (try (posTok B.NN) <|> try (posTok B.NNS)      -- noun(s)
           <|>  posTok B.PPO)                            -- pronoun; eg "them"
     _ <- PC.optionMaybe prepNotTransfer                 -- preposition, restrict "to"/"from"
     _ <- PC.optionMaybe (posTok B.AT)                   -- article
     b <- PC.optionMaybe (posTok B.JJ)
-    m <- PC.optionMaybe (posTok B.NN) <|> PC.optionMaybe (posTok B.NNS)
+    m <- PC.optionMaybe (try (posTok B.NN) <|> posTok B.NNS)
     return (C_Obj a (Obj n) b m)
     where
         prepNotTransfer = oneOf Insensitive (map Token ["on", "in", "of", "with"])
@@ -295,11 +306,11 @@ object = do
 -- determiners, such as in cases of "Tom gave Jane five more." This is then resolved
 -- heuristically in post-processing.
 objOrMore :: Extractor B.Tag C_Obj
-objOrMore = try object <|> more
+objOrMore = try more <|> object
 
 more :: Extractor B.Tag C_Obj
 more = do
-    m <- oneOf Insensitive (map Token ["more", "fewer", "less"])
+    m <- try (posTok B.PPO) <|> oneOf Insensitive (map Token ["more", "fewer", "less"])
     return (C_Obj Nothing (More m) Nothing Nothing)
 
 
@@ -390,12 +401,37 @@ takeAP = do
     return (C_AP_Take v n o t)
 
 eventCh :: Extractor B.Tag C_EvtP
-eventCh = do
+eventCh = try qtyChgAct <|> subjAct
+
+subjAct :: Extractor B.Tag C_EvtP
+subjAct = do
     s <- subjName
     _   <- PC.optionMaybe adverb
     a <- try setAP <|> try takeAP <|> try giveAP <|> changeAP
     return (C_EvtP s a)
 
+-- This is to handle when the number and object comes before the subject. Because the object
+-- location should be seen as the container, this involves converting the object to the owner
+-- and the subject to the object.
+qtyChgAct :: Extractor B.Tag C_EvtP
+qtyChgAct = do
+    n   <- number
+    dir <- PC.optionMaybe changeCh      -- "more", "fewer", etc
+    s   <- subjName
+    _   <- PC.optionMaybe adverb
+    v   <- verb
+    _   <- PC.optionMaybe (try adverb <|> posTok B.IN)
+    _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
+    o   <- PC.optionMaybe object
+    _   <- consumeRemainder
+    return (C_EvtP (objToSubj o) (C_AP_Chg v n dir (Just $ subjToObj s)))
+    where
+        subjToObj :: C_Subj -> C_Obj
+        subjToObj s = C_Obj (subjTitle $ subjToOwner s) (Obj (fromSubj $ subjToOwner s)) Nothing Nothing
+
+        objToSubj :: Maybe C_Obj -> C_Subj
+        objToSubj Nothing  = C_Subj (C_Owner Nothing (POS B.NN ""))
+        objToSubj (Just o) = C_Subj (C_Owner (objAdj1 o) (fromObj $ objItem o))
 
 {--------------------------------------------------------------------------------------------------}
 {---                                      QUESTION CHUNKS                                       ---}
@@ -446,9 +482,20 @@ howManyQst = do
     o <- object
     _ <- does
     s <- PC.optionMaybe subjName
-    v <- presentVerb
+    v <- verb
     a <- PC.optionMaybe adverb
     return (C_Qst_Qty o s v a)
+
+howManyInQst :: Extractor B.Tag C_Qst
+howManyInQst = do
+    _ <- howMany
+    o <- object
+    v <- verb
+    _ <- PC.optionMaybe adverb
+    p <- PC.optionMaybe (posTok B.IN)   -- adverb or preposition
+    c <- PC.optionMaybe object          -- container/place
+    _ <- PC.optionMaybe adverb
+    return (C_Qst_QtyIn o v p c)
 
 combineBothQst :: Extractor B.Tag C_Qst
 combineBothQst = do
@@ -457,7 +504,7 @@ combineBothQst = do
     _ <- does
     s <- try subjAndSubj <|> they
     _ <- PC.optionMaybe adverb
-    v <- presentVerb
+    v <- verb
     a <- PC.optionMaybe adverb
     t <- PC.optionMaybe (try inTotal <|> txtTok Sensitive (Token "now"))
     return (C_Qst_CB o s v a t)
@@ -469,7 +516,7 @@ combineAllQst = do
     _ <- does
     _ <- they
     _ <- PC.optionMaybe adverb
-    v <- presentVerb
+    v <- verb
     a <- PC.optionMaybe adverb
     t <- inTotal
     return (C_Qst_CA o v a t)
@@ -481,11 +528,24 @@ totalQst = do
     _ <- does
     s <- PC.optionMaybe subjName
     _ <- PC.optionMaybe adverb
-    v <- presentVerb
+    v <- verb
     a <- PC.optionMaybe adverb
     t <- inTotal
     return (C_Qst_Tot o s v a t)
 
 questionCh :: Extractor B.Tag C_Qst
 questionCh = try modQtyQst <|> try combineAllQst <|> try combineBothQst <|> try totalQst
-                <|> howManyQst
+                <|> try howManyQst <|> howManyInQst
+
+{--------------------------------------------------------------------------------------------------}
+{---                                       PREPROCESSING                                        ---}
+{--------------------------------------------------------------------------------------------------}
+{-
+-- Used for splitting a hypothetical question into its hypothesized event and its question.
+ifQst :: Extractor B.Tag (C_EvtP, C_Qst)
+ifQst = do
+    _ <- txtTok Sensitive (Token "If")
+    e <- PC.manyTill anyToken questionCh
+    q <- questionCh
+    return (e,q)
+-}

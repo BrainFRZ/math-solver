@@ -106,6 +106,9 @@ solve (Problem question events) = ask question $ run events
     ask (Question (Quantity subject) vb item) state = Answer (Quantity subject) vb result item
         where result = finalQuantity subject item state
 
+    ask (Question (QuantityIn subj prep) vb item) state = Answer (QuantityIn subj prep) vb res item
+      where res = finalQuantity subj item state
+
     ask (Question (Gain subject) vb item) state
         | gainer == NoOne  = Answer (Gain subject) vb 0 item
         | otherwise        = Answer (Gain subject) vb gain item
