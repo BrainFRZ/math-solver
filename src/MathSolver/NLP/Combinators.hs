@@ -65,7 +65,7 @@ isMore C_Obj{objItem=More{}} = True
 isMore _ = False
 
 
-newtype C_Verb  = C_Verb    { fromVerb   :: POS B.Tag           }   -- Verb phrase
+newtype C_Verb  = C_Verb    { fromVerb   :: [POS B.Tag]         }   -- Verb phrase
         deriving (Show, Eq)
 
 data C_ActP     = C_AP_Set  { actVerb :: C_Verb                     -- Verb to set inventory
@@ -127,7 +127,7 @@ data C_Qst      = C_Qst_Qty { qstObj    :: C_Obj                    -- Object as
                 | C_Qst_Mod { modQAdv    :: POS B.Tag               -- Adverb asked about; e.g. "long"
                             , modQMod    :: POS B.Tag               -- Mode of question; e.g. "will"
                             , modQSubj   :: POS B.Tag               -- Subject of question
-                            , modQVerb   :: POS B.Tag           }   -- Verb in time for the question
+                            , modQVerb   :: [POS B.Tag]         }   -- Verb in time for the question
         deriving (Show, Eq)
 newtype C_Comp  = C_Comp    { fromComp :: POS B.Tag             }   -- Comparison against a target
         deriving (Show, Eq)
@@ -146,7 +146,7 @@ is_v = do
        <|> try (posTok B.BER)   -- are
        <|> try (posTok B.BEDZ)  -- was
            <|> (posTok B.BED))  -- were
-    return (C_Verb is)
+    return (C_Verb [is])
 
 -- Useful for knowing the event is about setting inventory
 has_v :: Extractor B.Tag C_Verb
@@ -154,17 +154,19 @@ has_v = do
     is <- (try (posTok B.HVD)   -- had
        <|> try (posTok B.HVZ)   -- has
            <|> (posTok B.HV))   -- have
-    return (C_Verb is)
+    return (C_Verb [is])
 
 -- Made special case to handle "been"
 hasV :: Extractor B.Tag C_Verb
 hasV = do
     has <- has_v
-    _   <-  PC.optional (posTok B.BEN)  -- been (optional and stripped; eg "had been walked")
-    v   <- (try (posTok B.VBD)          -- verb, past tense
-        <|> try (posTok B.VBN)          -- verb, past participle
-            <|> (posTok B.VBG))         -- verb, present participle (-ing)
-    return (C_Verb v)
+    b   <- PC.optionMaybe (posTok B.BEN)    -- been (optional and stripped; eg "had been walked")
+    v   <- (try (posTok B.VBD)              -- verb, past tense
+        <|> try (posTok B.VBN)              -- verb, past participle
+            <|> (posTok B.VBG))             -- verb, present participle (-ing)
+    case b of
+        Nothing -> return (C_Verb [head (fromVerb has),v])
+        Just bn -> return (C_Verb [head (fromVerb has),bn,v])
 
 isV :: Extractor B.Tag C_Verb
 isV = do
@@ -172,7 +174,7 @@ isV = do
     v   <- (try (posTok B.VBG)  -- verb, present participle (-ing)
         <|> try (posTok B.VBN)  -- verb, past participle
             <|> (posTok B.HVG)) -- having
-    return (C_Verb v)
+    return (C_Verb [head (fromVerb is),v])
 
 -- >>> parse isVing "ghci" $ head $ tag tgr "is jumping over."
 isVing :: Extractor B.Tag C_Verb
@@ -180,16 +182,17 @@ isVing = do
     is <- is_v
     v  <- (try (posTok B.VBG)   -- verb, present participle (-ing)
            <|> (posTok B.HVG))  -- having
-    return (C_Verb v)
+    return (C_Verb [head (fromVerb is),v])
 
 -- parse singleV "gets" $ head $ tag tgr "walked five miles"
 singleV :: Extractor B.Tag C_Verb
 singleV = do
     v <- (try (posTok B.VBD)    -- verb, past tense
       <|> try (posTok B.VBZ)    -- verb, present tense
+      <|> try (posTok B.VB)     -- verb, present tense
       <|> try (posTok B.VBN)    -- verb, past participle
            <|> brokenVerbs)     -- Verbs that get mis-tagged
-    return (C_Verb v)
+    return (C_Verb [v])
 
 -- The tagger will sometimes get confused and break on valid problems. This is usually only a big
 -- deal with verbs. For example, "grabs" gets tagged as a plural noun. I'll add them here to be
@@ -207,7 +210,7 @@ presentVerb = do
     _ <- PC.optionMaybe adverb
     v <- (try (posTok B.HV) <|> try (posTok B.VB)  -- "have" or present verb
           <|> brokenVerbs)
-    return (C_Verb v)
+    return (C_Verb [v])
 
 {--------------------------------------------------------------------------------------------------}
 {---                                        OWNER CHUNKS                                        ---}
@@ -221,7 +224,8 @@ presentVerb = do
 subjName :: Extractor B.Tag C_Subj
 subjName = try he <|> do
     s <- subj
-    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> try (posPrefix "R") <|> brokenVerbs)
+    lookAhead (try (posPrefix "V") <|> try (posPrefix "H") <|> try (posPrefix "R")
+        <|> try (posPrefix "B") <|> brokenVerbs)
     return (C_Subj s)
 
 he :: Extractor B.Tag C_Subj
@@ -423,14 +427,13 @@ qtyChgAct = do
     _   <- PC.optionMaybe (try adverb <|> posTok B.IN)
     _   <- PC.optionMaybe (posTok B.DT) -- Determinant, e.g. "another", "those", etc
     o   <- PC.optionMaybe object
-    _   <- consumeRemainder
     return (C_EvtP (objToSubj o) (C_AP_Chg v n dir (Just $ subjToObj s)))
     where
         subjToObj :: C_Subj -> C_Obj
         subjToObj s = C_Obj (subjTitle $ subjToOwner s) (Obj (fromSubj $ subjToOwner s)) Nothing Nothing
 
         objToSubj :: Maybe C_Obj -> C_Subj
-        objToSubj Nothing  = C_Subj (C_Owner Nothing (POS B.NN ""))
+        objToSubj Nothing  = C_He (POS B.NN "") (C_Owner Nothing (POS B.NN ""))
         objToSubj (Just o) = C_Subj (C_Owner (objAdj1 o) (fromObj $ objItem o))
 
 {--------------------------------------------------------------------------------------------------}
@@ -474,7 +477,7 @@ modQtyQst = do
     m <- posTok B.MD
     s <- try (posTok B.PPS) <|> try (posTok B.NP)
     v <- try (posTok B.VB) <|> posPrefix "BE"
-    return (C_Qst_Mod a m s v)
+    return (C_Qst_Mod a m s [v])
 
 howManyQst :: Extractor B.Tag C_Qst
 howManyQst = do

@@ -125,13 +125,13 @@ data Problem = Problem { question :: Question
         deriving (Show, Eq)
 
 data Question = Question { questionType :: QuestionType
-                         , questionVerb :: Text
+                         , questionVerb :: [Text]
                          , itemAsked    :: Item }
         deriving (Show, Eq)
 
 data Answer = Unsolvable
             | Answer { answerType   :: QuestionType
-                     , answerVerb   :: Text
+                     , answerVerb   :: [Text]
                      , total        :: Amount
                      , itemAnswered :: Item }
         deriving (Show, Eq)

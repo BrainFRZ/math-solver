@@ -85,27 +85,28 @@ tryVerbFix (q, evs) = (fixVerb q, evs)
     -- Have and has won't stem to "ha", so they are checked manually because of how common they are
     tryUsedVerbOrHas :: C_Verb -> C_Verb
     tryUsedVerbOrHas v
-        | getVerbPos v == B.HV   = C_Verb (POS B.HVZ "has")
+        | getVerbPos v == B.HV   = C_Verb [POS B.HVZ "has"]
         | otherwise              = grabVerb v evs
 
-    getVerb :: C_Verb -> Text
-    getVerb v = showPOStok $ fromVerb v
-
     getVerbPos :: C_Verb -> B.Tag
-    getVerbPos v = posTag $ fromVerb v
+    getVerbPos v = posTag $ last $ fromVerb v
 
     evtVerb :: C_EvtP -> C_Verb
     evtVerb C_EvtP{fromActCh=act} = actVerb act
 
+    getVerb :: C_Verb -> [Text]
+    getVerb v = map showPOStok (fromVerb v)
+
     grabVerb :: C_Verb -> [C_EvtP] -> C_Verb
+    grabVerb C_Verb{fromVerb=[]} _ = error "Parser.grabVerb: Empty verb"
     grabVerb v [] = v
     grabVerb v (e:es) = bool tryLaterVerb thisVerb (isSimilarVerb (getVerb thisVerb) (getVerb v))
       where
         thisVerb     = evtVerb e
         tryLaterVerb = grabVerb v es
 
-        isSimilarVerb :: Text -> Text -> Bool
-        isSimilarVerb v1 v2 = stem English (T.unpack v1) == stem English (T.unpack v2)
+        isSimilarVerb :: [Text] -> [Text] -> Bool
+        isSimilarVerb v1 v2 = stem English (T.unpack $ last v1) == stem English (T.unpack $ last v2)
 --        | stem (getVerb $ evtVerb e) == stem (getVerb v)  = evtVerb e
 --        | otherwise                                       = grabVerb v es
 
@@ -248,14 +249,14 @@ getItemMaybe (Just i) = getItem i
 
 
 getQuestion :: C_Qst -> Question
-getQuestion q@C_Qst_Mod{modQAdv=a, modQMod=m, modQSubj=s, modQVerb=v}
-    = Question (getQstType q) (getQstVerb q) (Item Nothing (showPOStok s) Nothing Nothing)
+getQuestion q@C_Qst_Mod{modQAdv=a, modQMod=m, modQSubj=s, modQVerb=[v]}
+    = Question (getQstType q) [showPOStok v] (Item Nothing (showPOStok s) Nothing Nothing)
 getQuestion q@C_Qst_QtyIn{qstSubjIn = s, qstVerb = v}
     = Question (getQstType q) (getQstVerb q) (getItem s)
 getQuestion q = Question (getQstType q) (getQstVerb q) (getItem $ qstObj q)
 
-getQstVerb :: C_Qst -> Text
-getQstVerb = showPOStok. fromVerb . qstVerb
+getQstVerb :: C_Qst -> [Text]
+getQstVerb q = map showPOStok (fromVerb $ qstVerb q)
 
 qstSubjPos :: C_Subj -> B.Tag
 qstSubjPos = posTag . fromSubj . subjToOwner
@@ -272,15 +273,15 @@ getUnresolvedHeName (C_He name ref) = He heName (getOwner ref)
 -- question is interpreted as a Loss question.
 getQstType :: C_Qst -> QuestionType
 getQstType C_Qst_Qty{qstSubj = Nothing, qstVerb = v}
-    | M.member (showPOStok $ fromVerb v) remList  = Loss Someone
+    | M.member (getOpVerb v) remList              = Loss Someone
     | otherwise                                   = Quantity Someone
 
 getQstType C_Qst_Qty{qstSubj = Just he@C_He{}, qstVerb = v}
-    | M.member (showPOStok $ fromVerb v) remList  = Loss (getUnresolvedHeName he)
+    | M.member (getOpVerb v) remList              = Loss (getUnresolvedHeName he)
     | otherwise                                   = Quantity (getUnresolvedHeName he)
 
 getQstType C_Qst_Qty{qstSubj = Just s, qstVerb = v}
-    | M.member (showPOStok $ fromVerb v) remList  = Loss (getOwner $ subjToOwner s)
+    | M.member (getOpVerb v) remList              = Loss (getOwner $ subjToOwner s)
     | otherwise                                   = Quantity (getOwner $ subjToOwner s)
 
 getQstType C_Qst_QtyIn{qstWhere = Nothing, qstPrep = p} = QuantityIn Someone (getPrep p)
@@ -292,12 +293,12 @@ getQstType C_Qst_Tot{qstSubj = Just s}            = Total (getOwner $ subjToOwne
 
 getQstType C_Qst_CA{}                             = CombineAll
 
-getQstType C_Qst_Mod{modQSubj = s, modQVerb = v}      -- Modal qst type
+getQstType C_Qst_Mod{modQSubj = s, modQVerb = [v]}      -- Modal qst type
     | M.member (showPOStok v) remList             = Loss (Name Nothing (showPOStok s))
     | otherwise                                   = Quantity (Name Nothing (showPOStok s))
 
 getQstType C_Qst_CB{qstSubjs = (C_They t _), qstVerb = v}
-    | M.member (showPOStok $ fromVerb v) remList  = Loss (They (showPOStok t))
+    | M.member (getOpVerb v) remList  = Loss (They (showPOStok t))
     | otherwise                                   = Quantity (They (showPOStok t))
 
 getQstType C_Qst_CB{qstSubjs = s}                 = Combine (getOwner s1) (getOwner s2)
@@ -307,6 +308,11 @@ getQstType C_Qst_CB{qstSubjs = s}                 = Combine (getOwner s1) (getOw
 
 getPrep :: Maybe (POS B.Tag) -> Text
 getPrep p = bool T.empty (showPOStok $ fromJust p) (isJust p)
+
+-- The verb that's doing the operation is always the last verb. For example, in "is reading",
+-- "reading" is the verb that needs to be matched, etc.
+getOpVerb :: C_Verb -> Text
+getOpVerb = showPOStok . last . fromVerb
 
 -- Determines which Solver action the parsed action should map to. Currently the parsed action has
 -- far more information than is used, but this can be utilized for further certainty in
@@ -323,10 +329,10 @@ getAction (C_AP_Chg verb qty _ obj) = getChangeAction verb qty obj
 getChangeAction :: C_Verb -> C_Qty -> Maybe C_Obj -> Action
 getChangeAction v q i = vbAction qty item
   where
-    verb = showPOStok $ fromVerb v
+    verb = map showPOStok (fromVerb v)
     qty = getAmount q
     item = getItemMaybe i
-    vbAction = bool Add Remove (M.member verb remList)  -- Defaults to Add
+    vbAction = bool Add Remove (M.member (getOpVerb v) remList)  -- Defaults to Add
 
 
 changeActs :: M.Map Text (Integer -> Item -> Action)
@@ -385,5 +391,5 @@ writeItem :: Item -> String
 writeItem = show
 
 -- Writes a verb from an answer. This can be vastly improved by reconjugating the verb.
-writeVerb :: Text -> String
-writeVerb = T.unpack
+writeVerb :: [Text] -> String
+writeVerb = T.unpack . T.unwords
