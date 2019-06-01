@@ -42,7 +42,7 @@ displayMenu = do
 
 menu :: POSTagger B.Tag -> IO ()
 menu tgr = do
-    putStr "Enter an option: "
+    putStrLn "Enter an option: "
     opt <- getLine
     case M.lookup opt menuOpts of
         Just o  ->  execute o tgr >> menu tgr
@@ -56,7 +56,7 @@ execute fun = fun
 
 solveProblem :: POSTagger B.Tag -> IO ()
 solveProblem tgr = do
-    putStr "Enter a problem: "
+    putStrLn "Enter a problem: "
     prob <- getLine
     let p   = preproc $ tag tgr prob
     let q   = head $ rights [parse questionCh "Main.hs, line 62" (getQst p)]

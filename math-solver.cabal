@@ -15,10 +15,11 @@ extra-source-files:  README.md
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Main
---                     , MathSolver.Types
---                     , MathSolver.Calc.Solver
---                     , MathSolver.NLP.WordNum
+  exposed-modules:     MathSolver.Calc.Solver,
+                       MathSolver.NLP.Combinators,
+                       MathSolver.NLP.Parser,
+                       MathSolver.NLP.WordNum,
+                       MathSolver.Types
   build-depends:       base
                      , chatter
                      , containers
@@ -29,3 +30,16 @@ library
                      , QuickCheck (>=2.1 && <2.10)
                      , stemmer
   default-language:    Haskell2010
+
+executable math-solver
+  main-is:             Main.hs
+  hs-source-dirs:      src
+  build-depends:       base
+                     , chatter
+                     , containers
+                     , parsec
+                     , split
+                     , text
+                     , cereal
+                     , QuickCheck (>=2.1 && <2.10)
+                     , stemmer
